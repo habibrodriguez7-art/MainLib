@@ -2278,7 +2278,6 @@ function Library:Window(config)
                 local frame = new("Frame", {
                     Parent = self._container,
                     Size = UDim2.new(1, 0, 0, 0),
-                    AutomaticSize = Enum.AutomaticSize.Y,
                     BackgroundTransparency = 1,
                     ZIndex = 7,
                     LayoutOrder = getNextLayoutOrder()
@@ -2294,7 +2293,6 @@ function Library:Window(config)
                     LayoutOrder = 1,
                     Text = title,
                     Size = UDim2.new(1, 0, 0, 0),
-                    AutomaticSize = Enum.AutomaticSize.Y,
                     BackgroundTransparency = 1,
                     Font = Enum.Font.GothamBold,
                     TextSize = fontSize.small,
@@ -2312,7 +2310,6 @@ function Library:Window(config)
                     LayoutOrder = 2,
                     Text = content,
                     Size = UDim2.new(1, 0, 0, 0),
-                    AutomaticSize = Enum.AutomaticSize.Y,
                     BackgroundTransparency = 1,
                     Font = Enum.Font.Gotham,
                     TextSize = fontSize.small,
@@ -2324,14 +2321,24 @@ function Library:Window(config)
                     ZIndex = 8
                 })
                 local function reflowParagraph()
-                    if titleLabel and titleLabel.Parent then
-                        titleLabel.Size = UDim2.new(1, 0, 0, 0)
+                    local totalHeight = 0
+                    if titleLabel and titleLabel.Parent and titleLabel.Visible then
+                        local h = titleLabel.TextBounds.Y
+                        titleLabel.Size = UDim2.new(1, 0, 0, h)
+                        totalHeight = totalHeight + h + 3 -- padding
                     end
-                    if contentLabel and contentLabel.Parent then
-                        contentLabel.Size = UDim2.new(1, 0, 0, 0)
+                    if contentLabel and contentLabel.Parent and contentLabel.Visible then
+                        local h = contentLabel.TextBounds.Y
+                        contentLabel.Size = UDim2.new(1, 0, 0, h)
+                        totalHeight = totalHeight + h
+                    end
+                    if frame and frame.Parent then
+                        frame.Size = UDim2.new(1, 0, 0, totalHeight)
                     end
                 end
                 frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflowParagraph)
+                if titleLabel then titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflowParagraph) end
+                if contentLabel then contentLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflowParagraph) end
                 task.defer(reflowParagraph)
                 local paragraphObj = {
                     _frame        = frame,
