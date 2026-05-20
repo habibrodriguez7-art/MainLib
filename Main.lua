@@ -24,20 +24,21 @@ local colors = {
     secondary = Color3.fromRGB(147, 112, 219),
     accent = Color3.fromRGB(186, 85, 211),
     success = Color3.fromRGB(34, 197, 94),
-    bg1 = Color3.fromRGB(18, 18, 18),
-    bg2 = Color3.fromRGB(28, 28, 28),
-    bg3 = Color3.fromRGB(38, 38, 38),
-    bg4 = Color3.fromRGB(48, 48, 48),
-    text = Color3.fromRGB(255, 255, 255),
-    textDim = Color3.fromRGB(200, 200, 200),
-    textDimmer = Color3.fromRGB(150, 150, 150),
-    border = Color3.fromRGB(55, 55, 55),
+    -- Warm zinc / “zinc orange” — abu gelap dengan undertone oranye (bukan kebiruan)
+    bg1 = Color3.fromRGB(14, 12, 11),
+    bg2 = Color3.fromRGB(26, 23, 21),
+    bg3 = Color3.fromRGB(40, 35, 31),
+    bg4 = Color3.fromRGB(56, 48, 42),
+    text = Color3.fromRGB(252, 249, 246),
+    textDim = Color3.fromRGB(214, 206, 198),
+    textDimmer = Color3.fromRGB(168, 158, 148),
+    border = Color3.fromRGB(62, 54, 48),
 }
 local windowSize = UDim2.new(0, 420, 0, 280)
 local minWindowSize = Vector2.new(380, 250)
 local maxWindowSize = Vector2.new(800, 600)
 local sidebarWidth = 120
-local headerHeight = 38
+local headerHeight = 34
 local topBarHeight = 28
 local sectionHeaderHeight = 30
 local panelTransparency = 0.1
@@ -49,6 +50,17 @@ local fontSize = {
     normal = 11,
     small = 10,
 }
+local function formatRichText(text)
+    if type(text) ~= "string" or text == "" then
+        return ""
+    end
+    return (text:gsub('<font color="rgb%s*%(%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*%)">', function(r, g, b)
+        r = math.clamp(math.floor(tonumber(r) or 0), 0, 255)
+        g = math.clamp(math.floor(tonumber(g) or 0), 0, 255)
+        b = math.clamp(math.floor(tonumber(b) or 0), 0, 255)
+        return string.format('<font color="#%02X%02X%02X">', r, g, b)
+    end))
+end
 local function new(class, props)
     local inst = Instance.new(class)
     if props then
@@ -275,7 +287,7 @@ function Library:CreateWindow(config)
         ClipsDescendants = false,
         ZIndex = 3
     })
-    new("UICorner", {Parent = self._win, CornerRadius = UDim.new(0, 10)})
+    new("UICorner", {Parent = self._win, CornerRadius = UDim.new(0, 7)})
     self._sidebar = new("Frame", {
         Parent = self._win,
         Size = UDim2.new(0, sidebarWidth, 1, -headerHeight),
@@ -290,7 +302,7 @@ function Library:CreateWindow(config)
         Size = UDim2.new(0, 1, 1, 0),
         Position = UDim2.new(1, 0, 0, 0),
         BackgroundColor3 = colors.border,
-        BackgroundTransparency = 0.3,
+        BackgroundTransparency = 0.42,
         BorderSizePixel = 0,
         ZIndex = 4
     })
@@ -306,23 +318,23 @@ function Library:CreateWindow(config)
     })
     local headerLine = new("Frame", {
         Parent = scriptHeader,
-        Size = UDim2.new(1, 0, 0, 1),
-        Position = UDim2.new(0, 0, 1, 0),
+        Size = UDim2.new(1, -20, 0, 1),
+        Position = UDim2.new(0, 10, 1, -1),
         BackgroundColor3 = colors.border,
-        BackgroundTransparency = 0.3,
+        BackgroundTransparency = 0.62,
         BorderSizePixel = 0,
         ZIndex = 5
     })
     local headerDragHandle = new("Frame", {
         Parent = scriptHeader,
-        Size = UDim2.new(0, 32, 0, 3),
-        Position = UDim2.new(0.5, -16, 0, 5),
+        Size = UDim2.new(0, 28, 0, 2),
+        Position = UDim2.new(0.5, -14, 0, 4),
         BackgroundColor3 = colors.primary,
-        BackgroundTransparency = 0.2,
+        BackgroundTransparency = 0.35,
         BorderSizePixel = 0,
         ZIndex = 6
     })
-    new("UICorner", {Parent = headerDragHandle, CornerRadius = UDim.new(1, 0)})
+    new("UICorner", {Parent = headerDragHandle, CornerRadius = UDim.new(0, 2)})
     new("TextLabel", {
         Parent = scriptHeader,
         Text = title,
@@ -346,19 +358,19 @@ function Library:CreateWindow(config)
     })
     local separator = new("Frame", {
         Parent = scriptHeader,
-        Size = UDim2.new(0, 2, 0, 18),
-        Position = UDim2.new(0, 96, 0.5, -9),
+        Size = UDim2.new(0, 1, 0, 16),
+        Position = UDim2.new(0, 94, 0.5, -8),
         BackgroundColor3 = colors.primary,
-        BackgroundTransparency = 0.2,
+        BackgroundTransparency = 0.28,
         BorderSizePixel = 0,
         ZIndex = 6
     })
-    new("UICorner", {Parent = separator, CornerRadius = UDim.new(1, 0)})
+    new("UICorner", {Parent = separator, CornerRadius = UDim.new(0, 2)})
     new("TextLabel", {
         Parent = scriptHeader,
         Text = subtitle,
         Size = UDim2.new(0, 200, 1, 0),
-        Position = UDim2.new(0, 118, 0, 0),
+        Position = UDim2.new(0, 114, 0, 0),
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
         TextSize = fontSize.small,
@@ -377,7 +389,7 @@ function Library:CreateWindow(config)
         AutoButtonColor = false,
         ZIndex = 7
     })
-    new("UICorner", {Parent = btnMinHeader, CornerRadius = UDim.new(0, 6)})
+    new("UICorner", {Parent = btnMinHeader, CornerRadius = UDim.new(0, 4)})
     local btnMinStroke = new("UIStroke", {
         Parent = btnMinHeader,
         Color = colors.border,
@@ -422,8 +434,8 @@ function Library:CreateWindow(config)
     new("UIListLayout", {Parent = self._navContainer, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder})
     self._contentBg = new("Frame", {
         Parent = self._win,
-        Size = UDim2.new(1, -(sidebarWidth + 8), 1, -(headerHeight + 6)),
-        Position = UDim2.new(0, sidebarWidth + 4, 0, headerHeight + 2),
+        Size = UDim2.new(1, -(sidebarWidth + 6), 1, -(headerHeight + 3)),
+        Position = UDim2.new(0, sidebarWidth + 3, 0, headerHeight + 1),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ClipsDescendants = true,
@@ -431,14 +443,22 @@ function Library:CreateWindow(config)
     })
     local topBar = new("Frame", {
         Parent = self._contentBg,
-        Size = UDim2.new(1, -6, 0, topBarHeight),
-        Position = UDim2.new(0, 3, 0, 3),
-        BackgroundColor3 = colors.bg2,
-        BackgroundTransparency = panelTransparency,
+        Size = UDim2.new(1, -4, 0, topBarHeight),
+        Position = UDim2.new(0, 2, 0, 2),
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ZIndex = 5
     })
-    new("UICorner", {Parent = topBar, CornerRadius = UDim.new(0, 6)})
+    local pageTitleAccent = new("Frame", {
+        Parent = topBar,
+        Size = UDim2.new(0, 3, 0, 16),
+        Position = UDim2.new(0, 0, 0.5, -8),
+        BackgroundColor3 = colors.primary,
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        ZIndex = 6
+    })
+    new("UICorner", {Parent = pageTitleAccent, CornerRadius = UDim.new(1, 0)})
     self._pageTitle = new("TextLabel", {
         Parent = topBar,
         Text = "Dashboard",
@@ -449,7 +469,17 @@ function Library:CreateWindow(config)
         BackgroundTransparency = 1,
         TextColor3 = colors.text,
         TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
         ZIndex = 6
+    })
+    new("Frame", {
+        Parent = topBar,
+        Size = UDim2.new(1, -10, 0, 1),
+        Position = UDim2.new(0, 5, 1, -1),
+        BackgroundColor3 = colors.border,
+        BackgroundTransparency = 0.7,
+        BorderSizePixel = 0,
+        ZIndex = 5
     })
     local resizeHandle = new("TextButton", {
         Parent = self._win,
@@ -484,11 +514,12 @@ function Library:CreateWindow(config)
     local savedIconPos = UDim2.new(0, 20, 0, 100)
     local savedWinPos = self._win.Position
     local savedWinSize = self._win.Size
+    local minimizedIconSize = 40
     local function createMinimizedIcon()
         if icon then return end
         icon = new("ImageButton", {
             Parent = self._gui,
-            Size = UDim2.new(0, 50, 0, 50),
+            Size = UDim2.new(0, minimizedIconSize, 0, minimizedIconSize),
             Position = savedIconPos,
             BackgroundColor3 = colors.bg2,
             BackgroundTransparency = 0,
@@ -496,55 +527,80 @@ function Library:CreateWindow(config)
             Image = "rbxassetid://118176705805619",
             ScaleType = Enum.ScaleType.Fit,
             AutoButtonColor = false,
+            Active = true,
             ZIndex = 50
         })
-        new("UICorner", {Parent = icon, CornerRadius = UDim.new(0, 10)})
-        local logoText = new("TextLabel", {
+        new("UICorner", {Parent = icon, CornerRadius = UDim.new(0, 6)})
+        new("TextLabel", {
             Parent = icon,
             Text = "L",
             Size = UDim2.new(1, 0, 1, 0),
             Font = Enum.Font.GothamBold,
-            TextSize = 28,
+            TextSize = 22,
             BackgroundTransparency = 1,
             TextColor3 = colors.primary,
             Visible = icon.Image == "",
             ZIndex = 51
         })
         local iconConns = {}
-        local dragging, dragStart, startPos, dragMoved = false, nil, nil, false
-        iconConns[1] = icon.InputBegan:Connect(function(input)
+        local iconDragging = false
+        local iconDragStart = nil
+        local iconStartPos = nil
+        local iconDragMoved = false
+        local dragThreshold = 6
+        local function disconnectIconConns()
+            for i = #iconConns, 1, -1 do
+                local c = iconConns[i]
+                iconConns[i] = nil
+                pcall(function() c:Disconnect() end)
+            end
+        end
+        local function restoreFromIcon()
+            if not icon then return end
+            bringToFront()
+            self._win.Visible = true
+            self._win.Size = savedWinSize
+            self._win.Position = savedWinPos
+            disconnectIconConns()
+            icon:Destroy()
+            icon = nil
+            minimized = false
+        end
+        iconConns[#iconConns + 1] = icon.InputBegan:Connect(function(input)
+            if iconDragging then return end
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragging, dragMoved, dragStart, startPos = true, false, input.Position, icon.Position
+                iconDragging = true
+                iconDragMoved = false
+                iconDragStart = input.Position
+                iconStartPos = icon.Position
             end
         end)
-        iconConns[2] = icon.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                local delta = input.Position - dragStart
-                if math.sqrt(delta.X^2 + delta.Y^2) > 5 then dragMoved = true end
-                icon.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        iconConns[#iconConns + 1] = UserInputService.InputChanged:Connect(function(input)
+            if not iconDragging or not icon or not icon.Parent or not iconStartPos or not iconDragStart then return end
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                local delta = input.Position - iconDragStart
+                if delta.Magnitude > dragThreshold then
+                    iconDragMoved = true
+                end
+                icon.Position = UDim2.new(
+                    iconStartPos.X.Scale, iconStartPos.X.Offset + delta.X,
+                    iconStartPos.Y.Scale, iconStartPos.Y.Offset + delta.Y
+                )
             end
         end)
-        iconConns[3] = icon.InputEnded:Connect(function(input)
+        iconConns[#iconConns + 1] = UserInputService.InputEnded:Connect(function(input)
+            if not iconDragging then return end
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                if dragging then
-                    dragging = false
+                iconDragging = false
+                if icon and icon.Parent then
                     savedIconPos = icon.Position
-                    if not dragMoved then
-                        bringToFront()
-                        self._win.Visible = true
-                        self._win.Size = savedWinSize
-                        self._win.Position = savedWinPos
-                        for _, c in ipairs(iconConns) do pcall(function() c:Disconnect() end) end
-                        icon:Destroy()
-                        icon = nil
-                        minimized = false
+                    if not iconDragMoved then
+                        restoreFromIcon()
                     end
                 end
             end
         end)
-        icon.Destroying:Connect(function()
-            for _, c in ipairs(iconConns) do pcall(function() c:Disconnect() end) end
-        end)
+        icon.Destroying:Connect(disconnectIconConns)
     end
     self:AddConnection("minimizeBtn", btnMinHeader.MouseButton1Click:Connect(function()
         if not minimized then
@@ -633,7 +689,7 @@ function Library:CreatePage(name, title, imageId, order)
         LayoutOrder = order or 999,
         ZIndex = 6
     })
-    new("UICorner", {Parent = btn, CornerRadius = UDim.new(0, 7)})
+    new("UICorner", {Parent = btn, CornerRadius = UDim.new(0, 5)})
     local indicator = new("Frame", {
         Parent = btn,
         Size = UDim2.new(0, 3, 0, 16),
@@ -661,7 +717,7 @@ function Library:CreatePage(name, title, imageId, order)
         Position = UDim2.new(0, 28, 0, 0),
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
-        TextSize = fontSize.small,
+        TextSize = fontSize.normal,
         TextColor3 = colors.textDim,
         TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex = 7,
@@ -715,7 +771,7 @@ function Library:CreateCategory(parent, title, startOpen)
         ClipsDescendants = true,
         ZIndex = 6
     })
-    new("UICorner", {Parent = categoryFrame, CornerRadius = UDim.new(0, 6)})
+    new("UICorner", {Parent = categoryFrame, CornerRadius = UDim.new(0, 4)})
     new("UIListLayout", {
         Parent = categoryFrame,
         Padding = UDim.new(0, 0),
@@ -734,7 +790,7 @@ function Library:CreateCategory(parent, title, startOpen)
         Parent = header,
         Text = title,
         Size = UDim2.new(1, -32, 1, 0),
-        Position = UDim2.new(0, 8, 0, 0),
+        Position = UDim2.new(0, 10, 0, 0),
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
         TextSize = fontSize.normal,
@@ -764,8 +820,8 @@ function Library:CreateCategory(parent, title, startOpen)
     })
     new("UIPadding", {
         Parent = contentContainer,
-        PaddingLeft = UDim.new(0, 8),
-        PaddingRight = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 10),
+        PaddingRight = UDim.new(0, 10),
         PaddingBottom = UDim.new(0, 6)
     })
     new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
@@ -864,7 +920,7 @@ function Library:_initDropdownSystem()
         Parent = self._win,
         Size = UDim2.new(1, 0, 1, -headerHeight),
         Position = UDim2.new(0, 0, 0, headerHeight),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundColor3 = colors.bg1,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ClipsDescendants = true,
@@ -893,7 +949,7 @@ function Library:_initDropdownSystem()
         ZIndex = 152,
         Name = "DropdownPanel"
     })
-    new("UICorner", {Parent = self._dropdownPanel, CornerRadius = UDim.new(0, 8)})
+    new("UICorner", {Parent = self._dropdownPanel, CornerRadius = UDim.new(0, 6)})
     new("UIStroke", {
         Parent = self._dropdownPanel,
         Color = colors.border,
@@ -911,7 +967,7 @@ function Library:_initDropdownSystem()
         ZIndex = 153,
         Name = "PanelInner"
     })
-    new("UICorner", {Parent = panelInner, CornerRadius = UDim.new(0, 7)})
+    new("UICorner", {Parent = panelInner, CornerRadius = UDim.new(0, 5)})
     self._dropdownFolder = new("Folder", {
         Parent = panelInner,
         Name = "DropdownFolder"
@@ -990,7 +1046,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         LayoutOrder = dropdownLayoutOrder,
         ZIndex = 8
     })
-    new("UICorner", {Parent = selectFrame, CornerRadius = UDim.new(0, 6)})
+    new("UICorner", {Parent = selectFrame, CornerRadius = UDim.new(0, 4)})
     new("UIStroke", {Parent = selectFrame, Color = colors.border, Thickness = 1, Transparency = 0.5})
     local optionLabel = new("TextLabel", {
         Parent = selectFrame,
@@ -1038,7 +1094,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         ClearTextOnFocus = false,
         ZIndex = 154
     })
-    new("UICorner", {Parent = searchBox, CornerRadius = UDim.new(0, 6)})
+    new("UICorner", {Parent = searchBox, CornerRadius = UDim.new(0, 4)})
     new("UIStroke", {Parent = searchBox, Color = colors.border, Thickness = 1, Transparency = 0.5})
     new("UIPadding", {Parent = searchBox, PaddingLeft = UDim.new(0, 8)})
     local scrollSelect = new("ScrollingFrame", {
@@ -1154,7 +1210,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
             Name = "Option",
             ZIndex = 155
         })
-        new("UICorner", {Parent = optionFrame, CornerRadius = UDim.new(0, 5)})
+        new("UICorner", {Parent = optionFrame, CornerRadius = UDim.new(0, 3)})
         new("UIStroke", {Parent = optionFrame, Color = colors.border, Thickness = 1, Transparency = 0.65})
         local optionButton = new("TextButton", {
             Parent = optionFrame,
@@ -1188,7 +1244,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
             ZIndex = 156
         })
         new("UIStroke", {Parent = chooseFrame, Color = colors.primary, Thickness = 1.6, Transparency = 0.999})
-        new("UICorner", {Parent = chooseFrame})
+        new("UICorner", {Parent = chooseFrame, CornerRadius = UDim.new(0, 3)})
         local conn = optionButton.Activated:Connect(function()
             DropdownFunc.Value = value
             DropdownFunc:Set(DropdownFunc.Value)
@@ -1306,7 +1362,7 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
         LayoutOrder = dropdownLayoutOrder,
         ZIndex = 8
     })
-    new("UICorner", {Parent = selectFrame, CornerRadius = UDim.new(0, 6)})
+    new("UICorner", {Parent = selectFrame, CornerRadius = UDim.new(0, 4)})
     new("UIStroke", {Parent = selectFrame, Color = colors.border, Thickness = 1, Transparency = 0.5})
     local optionLabel = new("TextLabel", {
         Parent = selectFrame,
@@ -1354,7 +1410,7 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
         ClearTextOnFocus = false,
         ZIndex = 154
     })
-    new("UICorner", {Parent = searchBox, CornerRadius = UDim.new(0, 6)})
+    new("UICorner", {Parent = searchBox, CornerRadius = UDim.new(0, 4)})
     new("UIStroke", {Parent = searchBox, Color = colors.border, Thickness = 1, Transparency = 0.5})
     new("UIPadding", {Parent = searchBox, PaddingLeft = UDim.new(0, 8)})
     local scrollSelect = new("ScrollingFrame", {
@@ -1471,7 +1527,7 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
             Name = "Option",
             ZIndex = 155
         })
-        new("UICorner", {Parent = optionFrame, CornerRadius = UDim.new(0, 5)})
+        new("UICorner", {Parent = optionFrame, CornerRadius = UDim.new(0, 3)})
         new("UIStroke", {Parent = optionFrame, Color = colors.border, Thickness = 1, Transparency = 0.65})
         local optionButton = new("TextButton", {
             Parent = optionFrame,
@@ -1505,7 +1561,7 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
             ZIndex = 156
         })
         new("UIStroke", {Parent = chooseFrame, Color = colors.primary, Thickness = 1.6, Transparency = 0.999})
-        new("UICorner", {Parent = chooseFrame})
+        new("UICorner", {Parent = chooseFrame, CornerRadius = UDim.new(0, 3)})
         local conn = optionButton.Activated:Connect(function()
             if not table.find(DropdownFunc.Value, value) then
                 table.insert(DropdownFunc.Value, value)
@@ -1614,7 +1670,7 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         BorderSizePixel = 0,
         ZIndex = 8
     })
-    new("UICorner", {Parent = inputBg, CornerRadius = UDim.new(0, 6)})
+    new("UICorner", {Parent = inputBg, CornerRadius = UDim.new(0, 4)})
     local initialValue = Library.ConfigSystem.Get(configPath, defaultValue)
     local inputBox = new("TextBox", {
         Parent = inputBg,
@@ -1662,7 +1718,7 @@ function Library:CreateButton(parent, label, callback)
         BorderSizePixel = 0,
         ZIndex = 8
     })
-    new("UICorner", {Parent = btnFrame, CornerRadius = UDim.new(0, 7)})
+    new("UICorner", {Parent = btnFrame, CornerRadius = UDim.new(0, 5)})
     local button = new("TextButton", {
         Parent = btnFrame,
         Size = UDim2.new(1, 0, 1, 0),
@@ -1743,7 +1799,7 @@ function Library:CreateTextBox(parent, label, placeholder, configPath, defaultVa
         ClearTextOnFocus = false,
         ZIndex = 8
     })
-    new("UICorner", {Parent = textBox, CornerRadius = UDim.new(0, 7)})
+    new("UICorner", {Parent = textBox, CornerRadius = UDim.new(0, 5)})
     new("UIPadding", {Parent = textBox, PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)})
     local lastValue = initialValue
     self:AddConnection("textbox_" .. label .. tostring(textBox), textBox.FocusLost:Connect(function()
@@ -1819,7 +1875,7 @@ function Library:MakeNotify(config)
         ZIndex = 200
     })
     table.insert(self._activeNotifs, notif)
-    new("UICorner", {Parent = notif, CornerRadius = UDim.new(0, 8)})
+    new("UICorner", {Parent = notif, CornerRadius = UDim.new(0, 6)})
     local accent = new("Frame", {
         Parent = notif,
         Size = UDim2.new(0, 3, 1, -8),
@@ -2216,8 +2272,9 @@ function Library:Window(config)
             end
             function SectionObject:AddParagraph(paragraphConfig)
                 paragraphConfig = paragraphConfig or {}
-                local title   = paragraphConfig.Title or ""
-                local content = paragraphConfig.Content or ""
+                local title   = formatRichText(paragraphConfig.Title or "")
+                local content = formatRichText(paragraphConfig.Content or "")
+                local useRich = paragraphConfig.RichText ~= false
                 local frame = new("Frame", {
                     Parent = self._container,
                     Size = UDim2.new(1, 0, 0, 0),
@@ -2245,7 +2302,7 @@ function Library:Window(config)
                     TextXAlignment = Enum.TextXAlignment.Left,
                     TextYAlignment = Enum.TextYAlignment.Top,
                     TextWrapped = true,
-                    RichText = false,
+                    RichText = useRich,
                     Visible = title ~= "",
                     ZIndex = 8
                 })
@@ -2263,23 +2320,35 @@ function Library:Window(config)
                     TextXAlignment = Enum.TextXAlignment.Left,
                     TextYAlignment = Enum.TextYAlignment.Top,
                     TextWrapped = true,
-                    RichText = false,
+                    RichText = useRich,
                     ZIndex = 8
                 })
+                local function reflowParagraph()
+                    if titleLabel and titleLabel.Parent then
+                        titleLabel.Size = UDim2.new(1, 0, 0, 0)
+                    end
+                    if contentLabel and contentLabel.Parent then
+                        contentLabel.Size = UDim2.new(1, 0, 0, 0)
+                    end
+                end
+                frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflowParagraph)
+                task.defer(reflowParagraph)
                 local paragraphObj = {
                     _frame        = frame,
                     _titleLabel   = titleLabel,
                     _contentLabel = contentLabel,
                     SetTitle = function(self, newTitle)
                         if self._titleLabel then
-                            newTitle = newTitle or ""
+                            newTitle = formatRichText(newTitle or "")
                             self._titleLabel.Text = newTitle
                             self._titleLabel.Visible = newTitle ~= ""
+                            reflowParagraph()
                         end
                     end,
                     SetContent = function(self, newContent)
                         if self._contentLabel then
-                            self._contentLabel.Text = newContent or ""
+                            self._contentLabel.Text = formatRichText(newContent or "")
+                            reflowParagraph()
                         end
                     end,
                     GetTitle = function(self)
