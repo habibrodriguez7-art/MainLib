@@ -12,19 +12,24 @@ Library._navContainer = nil
 Library._connections = {}
 Library._saveThread = nil
 Library._initialized = false
-local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
+local CONFIG_FOLDER    = "LynxGUI_Configs"
+local CONFIG_FILE      = CONFIG_FOLDER .. "/lynx_config.json"
+local CurrentConfig    = {}
+local DefaultConfig    = {}
+local isDirty          = false
+local CallbackRegistry = {}
+local Players         = game:GetService("Players")
+local CoreGui         = game:GetService("CoreGui")
+local TweenService    = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
-local localPlayer = Players.LocalPlayer
+local RunService      = game:GetService("RunService")
+local HttpService     = game:GetService("HttpService")
+local localPlayer     = Players.LocalPlayer
 local colors = {
     primary = Color3.fromRGB(255, 140, 0),
     secondary = Color3.fromRGB(147, 112, 219),
     accent = Color3.fromRGB(186, 85, 211),
     success = Color3.fromRGB(34, 197, 94),
-    -- Warm zinc / “zinc orange” — abu gelap dengan undertone oranye (bukan kebiruan)
     bg1 = Color3.fromRGB(14, 12, 11),
     bg2 = Color3.fromRGB(26, 23, 21),
     bg3 = Color3.fromRGB(40, 35, 31),
@@ -105,7 +110,11 @@ function Library:Cleanup()
         pcall(function() task.cancel(self._saveThread) end)
         self._saveThread = nil
     end
-    if CallbackRegistry then table.clear(CallbackRegistry) end
+    if CallbackRegistry then
+        for k in pairs(CallbackRegistry) do
+            CallbackRegistry[k] = nil
+        end
+    end
     if self.flags then table.clear(self.flags) end
     if self.pages then table.clear(self.pages) end
     if self._navButtons then table.clear(self._navButtons) end
@@ -125,16 +134,14 @@ function Library:Cleanup()
     self._currentPage = nil
     self._initialized = false
 end
-local CONFIG_FOLDER = "LynxGUI_Configs"
-local CONFIG_FILE = CONFIG_FOLDER .. "/lynx_config.json"
-local CurrentConfig = {}
-local DefaultConfig = {}
-local isDirty = false
-local CallbackRegistry = {}
-local function DeepCopy(original)
+local function DeepCopy(original, _seen)
+    _seen = _seen or {}
+    if type(original) ~= "table" then return original end
+    if _seen[original] then return _seen[original] end
     local copy = {}
+    _seen[original] = copy
     for k, v in pairs(original) do
-        copy[k] = type(v) == "table" and DeepCopy(v) or v
+        copy[DeepCopy(k, _seen)] = DeepCopy(v, _seen)
     end
     return copy
 end
@@ -155,20 +162,29 @@ function Library.ConfigSystem.SetDefaults(defaults)
     DefaultConfig = DeepCopy(defaults)
 end
 function Library.ConfigSystem.Save()
-    local success = pcall(function()
+    local ok, err = pcall(function()
         EnsureFolderExists()
-        writefile(CONFIG_FILE, HttpService:JSONEncode(CurrentConfig))
+        local encoded = HttpService:JSONEncode(CurrentConfig)
+        writefile(CONFIG_FILE, encoded)
     end)
-    return success
+    return ok
 end
 function Library.ConfigSystem.Load()
     EnsureFolderExists()
     CurrentConfig = DeepCopy(DefaultConfig)
     if isfile(CONFIG_FILE) then
-        pcall(function()
-            local loaded = HttpService:JSONDecode(readfile(CONFIG_FILE))
-            MergeTables(CurrentConfig, loaded)
+        local ok, err = pcall(function()
+            local raw = readfile(CONFIG_FILE)
+            if not raw or raw == "" then return end
+            local loaded = HttpService:JSONDecode(raw)
+            if type(loaded) == "table" then
+                MergeTables(CurrentConfig, loaded)
+            end
         end)
+        if not ok then
+            pcall(function() delfile(CONFIG_FILE) end)
+            CurrentConfig = DeepCopy(DefaultConfig)
+        end
     end
     return CurrentConfig
 end
@@ -208,34 +224,32 @@ local function MarkDirty()
         pcall(function() task.cancel(Library._saveThread) end)
         Library._saveThread = nil
     end
-    Library._saveThread = task.delay(1, function()
-        if not isDirty then return end
-        pcall(function() Library.ConfigSystem.Save() end)
+    Library._saveThread = task.delay(2, function()
+        if not isDirty then
+            Library._saveThread = nil
+            return
+        end
+        local ok = pcall(function() Library.ConfigSystem.Save() end)
         isDirty = false
         Library._saveThread = nil
     end)
 end
 local function RegisterCallback(configPath, callback, componentType, defaultValue, updateVisualFn)
-    if configPath then
-        for i = #CallbackRegistry, 1, -1 do
-            if CallbackRegistry[i].path == configPath then
-                table.remove(CallbackRegistry, i)
-            end
-        end
-        table.insert(CallbackRegistry, {
-            path = configPath,
-            callback = callback,
-            type = componentType,
-            default = defaultValue,
-            updateVisual = updateVisualFn
-        })
-    end
+    if not configPath then return end
+    CallbackRegistry[configPath] = {
+        path         = configPath,
+        callback     = callback,
+        type         = componentType,
+        default      = defaultValue,
+        updateVisual = updateVisualFn,
+    }
 end
+
 local function ExecuteConfigCallbacks()
-    for _, entry in ipairs(CallbackRegistry) do
+    for _, entry in pairs(CallbackRegistry) do
         local value = Library.ConfigSystem.Get(entry.path, entry.default)
         if entry.updateVisual then pcall(entry.updateVisual, value) end
-        if entry.callback then pcall(entry.callback, value) end
+        if entry.callback     then pcall(entry.callback,     value) end
     end
 end
 _G.AutoSaveEnabled = true
@@ -359,9 +373,9 @@ function Library:CreateWindow(config)
     local separator = new("Frame", {
         Parent = scriptHeader,
         Size = UDim2.new(0, 1, 0, 16),
-        Position = UDim2.new(0, 94, 0.5, -8),
-        BackgroundColor3 = colors.primary,
-        BackgroundTransparency = 0.28,
+        Position = UDim2.new(0, 82, 0.5, -8),
+        BackgroundColor3 = colors.border,
+        BackgroundTransparency = 0.2,
         BorderSizePixel = 0,
         ZIndex = 6
     })
@@ -370,7 +384,7 @@ function Library:CreateWindow(config)
         Parent = scriptHeader,
         Text = subtitle,
         Size = UDim2.new(0, 200, 1, 0),
-        Position = UDim2.new(0, 114, 0, 0),
+        Position = UDim2.new(0, 96, 0, 0),
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
         TextSize = fontSize.small,
@@ -380,37 +394,37 @@ function Library:CreateWindow(config)
     })
     local btnMinHeader = new("TextButton", {
         Parent = scriptHeader,
-        Size = UDim2.new(0, 24, 0, 24),
-        Position = UDim2.new(1, -30, 0.5, -12),
+        Size = UDim2.new(0, 22, 0, 22),
+        Position = UDim2.new(1, -28, 0.5, -11),
         BackgroundColor3 = colors.bg2,
-        BackgroundTransparency = panelTransparency,
+        BackgroundTransparency = sectionTransparency,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
         ZIndex = 7
     })
-    new("UICorner", {Parent = btnMinHeader, CornerRadius = UDim.new(0, 4)})
+    new("UICorner", {Parent = btnMinHeader, CornerRadius = UDim.new(0, 5)})
     local btnMinStroke = new("UIStroke", {
         Parent = btnMinHeader,
         Color = colors.border,
         Thickness = 1,
-        Transparency = 0.55
+        Transparency = 0.4
     })
     local minLine = new("Frame", {
         Parent = btnMinHeader,
         Size = UDim2.new(0, 10, 0, 2),
         Position = UDim2.new(0.5, -5, 0.5, -1),
-        BackgroundColor3 = colors.textDim,
+        BackgroundColor3 = colors.primary,
         BorderSizePixel = 0,
         ZIndex = 8
     })
     new("UICorner", {Parent = minLine, CornerRadius = UDim.new(1, 0)})
     local function setMinimizeHover(hovering)
         btnMinHeader.BackgroundColor3 = hovering and colors.bg3 or colors.bg2
-        btnMinHeader.BackgroundTransparency = hovering and 0.05 or panelTransparency
-        minLine.BackgroundColor3 = hovering and colors.primary or colors.textDim
         btnMinStroke.Color = hovering and colors.primary or colors.border
-        btnMinStroke.Transparency = hovering and 0.25 or 0.55
+        btnMinStroke.Transparency = hovering and 0.1 or 0.4
+        minLine.Size = hovering and UDim2.new(0, 12, 0, 2) or UDim2.new(0, 10, 0, 2)
+        minLine.Position = hovering and UDim2.new(0.5, -6, 0.5, -1) or UDim2.new(0.5, -5, 0.5, -1)
     end
     self:AddConnection("minimizeHoverIn", btnMinHeader.MouseEnter:Connect(function()
         setMinimizeHover(true)
@@ -740,7 +754,7 @@ function Library:_switchPage(pageName)
     for name, data in pairs(self._navButtons) do
         local isActive = name == pageName
         data.btn.BackgroundColor3 = isActive and colors.bg2 or colors.bg2
-        data.btn.BackgroundTransparency = isActive and panelTransparency or 1
+        data.btn.BackgroundTransparency = isActive and sectionTransparency or 1
         local icon = data.btn:FindFirstChild("Icon")
         if icon then
             icon.ImageColor3 = isActive and colors.primary or colors.textDim
@@ -827,11 +841,11 @@ function Library:CreateCategory(parent, title, startOpen)
     new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
     local isOpen = startOpen
     arrow.Rotation = startOpen and 180 or 0
-    self:AddConnection("categoryToggle_" .. title .. tostring(categoryFrame), header.MouseButton1Click:Connect(function()
+    header.MouseButton1Click:Connect(function()
         isOpen = not isOpen
         contentContainer.Visible = isOpen
         arrow.Rotation = isOpen and 180 or 0
-    end))
+    end)
     return contentContainer
 end
 function Library:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
@@ -1829,17 +1843,21 @@ end
 function Library:Initialize()
     if self._initialized then return end
     self._initialized = true
+    ExecuteConfigCallbacks()
     if self._pendingWindowObj then
         pcall(function()
             self:_createConfigTab(self._pendingWindowObj)
         end)
         self._pendingWindowObj = nil
     end
-    ExecuteConfigCallbacks()
-
     self:AddConnection("playerRemoving", Players.PlayerRemoving:Connect(function(plr)
         if plr == localPlayer then
-            Library.ConfigSystem.Save()
+            if Library._saveThread then
+                pcall(function() task.cancel(Library._saveThread) end)
+                Library._saveThread = nil
+            end
+            isDirty = false
+            pcall(function() Library.ConfigSystem.Save() end)
         end
     end))
 end
@@ -1851,11 +1869,11 @@ function Library:LoadConfig(data)
 end
 function Library:MakeNotify(config)
     config = config or {}
-    local title = config.Title or "Notification"
-    local desc = config.Description or ""
+    local title   = config.Title or "Notification"
+    local desc    = config.Description or ""
     local content = config.Content or ""
-    local color = config.Color or colors.primary
-    local delay = config.Delay or 3
+    local color   = config.Color or colors.primary
+    local delay   = config.Delay or 3
     if not self._gui then return end
     self._activeNotifs = self._activeNotifs or {}
     for i = #self._activeNotifs, 1, -1 do
@@ -2051,23 +2069,15 @@ function Library:Window(config)
     Library.ConfigSystem.Load()
     local WindowObject = {}
     WindowObject._library = self
-    WindowObject._tabs = {}
+    WindowObject._tabs    = {}
     WindowObject._tabOrder = 0
     Library._initialized = false
     Library._pendingWindowObj = WindowObject
-    local initFrames = 0
-    Library:AddConnection("autoInit", RunService.Heartbeat:Connect(function()
-        initFrames = initFrames + 1
-        if initFrames >= 30 then
-            if Library._connections["autoInit"] then
-                Library._connections["autoInit"]:Disconnect()
-                Library._connections["autoInit"] = nil
-            end
-            if not Library._initialized then
-                Library:Initialize()
-            end
+    task.delay(0.5, function()
+        if not Library._initialized then
+            Library:Initialize()
         end
-    end))
+    end)
     function WindowObject:AddTab(tabConfig)
         tabConfig = tabConfig or {}
         local tabName = tabConfig.Name or "Tab"
@@ -2325,7 +2335,7 @@ function Library:Window(config)
                     if titleLabel and titleLabel.Parent and titleLabel.Visible then
                         local h = titleLabel.TextBounds.Y
                         titleLabel.Size = UDim2.new(1, 0, 0, h)
-                        totalHeight = totalHeight + h + 3 -- padding
+                        totalHeight = totalHeight + h + 3
                     end
                     if contentLabel and contentLabel.Parent and contentLabel.Visible then
                         local h = contentLabel.TextBounds.Y
