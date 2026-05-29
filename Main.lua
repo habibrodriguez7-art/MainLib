@@ -935,7 +935,7 @@ function Library:_initDropdownSystem()
         Size = UDim2.new(1, 0, 1, -headerHeight),
         Position = UDim2.new(0, 0, 0, headerHeight),
         BackgroundColor3 = colors.bg1,
-        BackgroundTransparency = 1,
+        BackgroundTransparency = 0.95,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         Visible = false,
@@ -982,8 +982,13 @@ function Library:_initDropdownSystem()
         Name = "PanelInner"
     })
     new("UICorner", {Parent = panelInner, CornerRadius = UDim.new(0, 5)})
-    self._dropdownFolder = new("Folder", {
+    self._dropdownFolder = new("Frame", {
         Parent = panelInner,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        ZIndex = 153,
         Name = "DropdownFolder"
     })
     self._dropdownPageLayout = new("UIPageLayout", {
@@ -997,24 +1002,22 @@ function Library:_initDropdownSystem()
     })
     self:AddConnection("dropdownOverlayClose", closeOverlay.Activated:Connect(function()
         if self._dropdownOverlay.Visible then
-            self._dropdownOverlay.BackgroundTransparency = 0.999
+            self._dropdownOverlay.BackgroundTransparency = 0.95
             self._dropdownPanel.Position = UDim2.new(1, 172, 0.5, 0)
             self._dropdownOverlay.Visible = false
         end
     end))
 end
-function Library:_showDropdown(layoutOrder)
+function Library:_showDropdown(dropdownContainer)
     self:_initDropdownSystem()
-    if not self._dropdownOverlay.Visible then
-        self._dropdownOverlay.Visible = true
-        self._dropdownPageLayout:JumpToIndex(layoutOrder)
-        self._dropdownOverlay.BackgroundTransparency = 1
-        self._dropdownPanel.Position = UDim2.new(1, -11, 0.5, 0)
-    end
+    self._dropdownOverlay.Visible = true
+    self._dropdownPageLayout:JumpTo(dropdownContainer)
+    self._dropdownOverlay.BackgroundTransparency = 0.95
+    self._dropdownPanel.Position = UDim2.new(1, -11, 0.5, 0)
 end
 function Library:_hideDropdown()
     if self._dropdownOverlay and self._dropdownOverlay.Visible then
-        self._dropdownOverlay.BackgroundTransparency = 0.999
+        self._dropdownOverlay.BackgroundTransparency = 0.95
         self._dropdownPanel.Position = UDim2.new(1, 172, 0.5, 0)
         self._dropdownOverlay.Visible = false
     end
@@ -1121,6 +1124,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         BackgroundTransparency = 1,
         ScrollBarThickness = 3,
         CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ZIndex = 154
     })
     local listLayout = new("UIListLayout", {
@@ -1129,7 +1133,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         SortOrder = Enum.SortOrder.LayoutOrder
     })
     self:AddConnection("dropdownLayout_" .. dropdownLayoutOrder, listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scrollSelect.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
+        scrollSelect.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
     end))
     local savedValue = configPath and Library.ConfigSystem.Get(configPath, defaultValue) or defaultValue
     local DropdownFunc = { Value = savedValue, Options = items }
@@ -1188,18 +1192,11 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         if isBuilt then return end
         clearOptionFrames()
         local list = DropdownFunc.Options or {}
-        buildThread = task.spawn(function()
-            local chunk = 50
-            for i, opt in ipairs(list) do
-                DropdownFunc:AddOption(opt)
-                if i % chunk == 0 then
-                    task.wait()
-                end
-            end
-            isBuilt = true
-            buildThread = nil
-            refreshSelectionVisuals()
-        end)
+        for _, opt in ipairs(list) do
+            DropdownFunc:AddOption(opt)
+        end
+        isBuilt = true
+        refreshSelectionVisuals()
     end
     function DropdownFunc:Clear()
         clearOptionFrames()
@@ -1293,6 +1290,10 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         selecting = selecting or nil
         clearOptionFrames()
         DropdownFunc.Options = newList
+        for _, opt in ipairs(newList) do
+            DropdownFunc:AddOption(opt)
+        end
+        isBuilt = true
         DropdownFunc:Set(selecting)
     end
     function DropdownFunc:Refresh(newList)
@@ -1316,7 +1317,13 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
     end))
     self:AddConnection("dropdownOpen_" .. dropdownLayoutOrder, dropdownButton.Activated:Connect(function()
         ensureBuilt()
-        self:_showDropdown(dropdownLayoutOrder)
+        searchBox.Text = ""
+        for _, entry in ipairs(optionFrameCache) do
+            if entry.frame and entry.frame.Parent then
+                entry.frame.Visible = true
+            end
+        end
+        self:_showDropdown(dropdownContainer)
     end))
     DropdownFunc:SetValues(items, savedValue)
     if configPath then
@@ -1437,6 +1444,7 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
         BackgroundTransparency = 1,
         ScrollBarThickness = 3,
         CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ZIndex = 154
     })
     local listLayout = new("UIListLayout", {
@@ -1445,7 +1453,7 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
         SortOrder = Enum.SortOrder.LayoutOrder
     })
     self:AddConnection("multiDropdownLayout_" .. dropdownLayoutOrder, listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scrollSelect.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
+        scrollSelect.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
     end))
     local savedValues = configPath and Library.ConfigSystem.Get(configPath, defaultValues or {}) or (defaultValues or {})
     if type(savedValues) ~= "table" then savedValues = {} end
@@ -1505,18 +1513,11 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
         if isBuilt then return end
         clearOptionFrames()
         local list = DropdownFunc.Options or {}
-        buildThread = task.spawn(function()
-            local chunk = 50
-            for i, opt in ipairs(list) do
-                DropdownFunc:AddOption(opt)
-                if i % chunk == 0 then
-                    task.wait()
-                end
-            end
-            isBuilt = true
-            buildThread = nil
-            refreshSelectionVisuals()
-        end)
+        for _, opt in ipairs(list) do
+            DropdownFunc:AddOption(opt)
+        end
+        isBuilt = true
+        refreshSelectionVisuals()
     end
     function DropdownFunc:Clear()
         clearOptionFrames()
@@ -1620,6 +1621,10 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
         if type(selecting) ~= "table" then selecting = {} end
         clearOptionFrames()
         DropdownFunc.Options = newList
+        for _, opt in ipairs(newList) do
+            DropdownFunc:AddOption(opt)
+        end
+        isBuilt = true
         DropdownFunc:Set(selecting)
     end
     function DropdownFunc:Refresh(newList)
@@ -1643,7 +1648,13 @@ function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, 
     end))
     self:AddConnection("multiDropdownOpen_" .. dropdownLayoutOrder, dropdownButton.Activated:Connect(function()
         ensureBuilt()
-        self:_showDropdown(dropdownLayoutOrder)
+        searchBox.Text = ""
+        for _, entry in ipairs(optionFrameCache) do
+            if entry.frame and entry.frame.Parent then
+                entry.frame.Visible = true
+            end
+        end
+        self:_showDropdown(dropdownContainer)
     end))
     DropdownFunc:SetValues(items, savedValues)
     if configPath then
