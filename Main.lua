@@ -55,6 +55,7 @@ local fontSize = {
     normal = 11,
     small = 10,
 }
+
 local function formatRichText(text)
     if type(text) ~= "string" or text == "" then
         return ""
@@ -66,6 +67,7 @@ local function formatRichText(text)
         return string.format('<font color="#%02X%02X%02X">', r, g, b)
     end))
 end
+
 local function new(class, props)
     local inst = Instance.new(class)
     if props then
@@ -1851,6 +1853,38 @@ function Library:CreateTextBox(parent, label, placeholder, configPath, defaultVa
     end
     return {Container = container, TextBox = textBox, SetValue = function(v) textBox.Text = tostring(v) lastValue = tostring(v) end}
 end
+function Library:AddTab(name, imageId, order)
+    return self:CreatePage(name, name, imageId, order)
+end
+
+function Library:AddSection(parent, title, startOpen)
+    return self:CreateCategory(parent, title, startOpen)
+end
+
+function Library:AddToggle(parent, label, configPath, callback, disableSave, defaultValue)
+    return self:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
+end
+
+function Library:AddDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue)
+    return self:CreateDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue)
+end
+
+function Library:AddMultiDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValues)
+    return self:CreateMultiDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValues)
+end
+
+function Library:AddInput(parent, label, configPath, defaultValue, callback)
+    return self:CreateInput(parent, label, configPath, defaultValue, callback)
+end
+
+function Library:AddButton(parent, label, callback)
+    return self:CreateButton(parent, label, callback)
+end
+
+function Library:AddTextBox(parent, label, placeholder, configPath, defaultValue, callback)
+    return self:CreateTextBox(parent, label, placeholder, configPath, defaultValue, callback)
+end
+
 function Library:Initialize()
     if self._initialized then return end
     self._initialized = true
@@ -2002,35 +2036,38 @@ function Library:_createConfigTab(WindowObject)
     local resetConfirm = false
     local resetThread  = nil
     local resetBtnFrame
-    resetBtnFrame = self:CreateButton(mgmtSection._container, "Reset to Default", function()
-        if not resetConfirm then
-            resetConfirm = true
-            local btn = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
-            if btn then btn.Text = "Klik lagi untuk konfirmasi!" end
-            resetBtnFrame.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-            if resetThread then task.cancel(resetThread) end
-            resetThread = task.delay(3, function()
+    resetBtnFrame = mgmtSection:AddButton({
+        Title = "Reset to Default",
+        Callback = function()
+            if not resetConfirm then
+                resetConfirm = true
+                local btn = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
+                if btn then btn.Text = "Klik lagi untuk konfirmasi!" end
+                resetBtnFrame.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+                if resetThread then task.cancel(resetThread) end
+                resetThread = task.delay(3, function()
+                    resetConfirm = false
+                    local b = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
+                    if b then b.Text = "Reset to Default" end
+                    resetBtnFrame.BackgroundColor3 = colors.primary
+                end)
+            else
+                if resetThread then task.cancel(resetThread) end
                 resetConfirm = false
-                local b = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
-                if b then b.Text = "Reset to Default" end
+                local btn = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
+                if btn then btn.Text = "Reset to Default" end
                 resetBtnFrame.BackgroundColor3 = colors.primary
-            end)
-        else
-            if resetThread then task.cancel(resetThread) end
-            resetConfirm = false
-            local btn = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
-            if btn then btn.Text = "Reset to Default" end
-            resetBtnFrame.BackgroundColor3 = colors.primary
-            Library.ConfigSystem.Reset()
-            ExecuteConfigCallbacks()
-            self:MakeNotify({
-                Title       = "Config",
-                Description = "Semua settingan direset ke default!",
-                Color       = Color3.fromRGB(220, 50, 50),
-                Delay       = 3,
-            })
+                Library.ConfigSystem.Reset()
+                ExecuteConfigCallbacks()
+                self:MakeNotify({
+                    Title       = "Config",
+                    Description = "Semua settingan direset ke default!",
+                    Color       = Color3.fromRGB(220, 50, 50),
+                    Delay       = 3,
+                })
+            end
         end
-    end)
+    })
     mgmtSection:AddParagraph({
         Title   = "⚠️ Perhatian",
         Content = "Setelah melakukan Reset to Default, beberapa settingan seperti Toggle dan nilai Input akan langsung ter-update di UI.\n\n"
@@ -2040,34 +2077,37 @@ function Library:_createConfigTab(WindowObject)
     local deleteConfirm = false
     local deleteThread  = nil
     local deleteBtnFrame
-    deleteBtnFrame = self:CreateButton(mgmtSection._container, "Delete Config File", function()
-        if not deleteConfirm then
-            deleteConfirm = true
-            local btn = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
-            if btn then btn.Text = "Klik lagi untuk konfirmasi!" end
-            deleteBtnFrame.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
-            if deleteThread then task.cancel(deleteThread) end
-            deleteThread = task.delay(3, function()
+    deleteBtnFrame = mgmtSection:AddButton({
+        Title = "Delete Config File",
+        Callback = function()
+            if not deleteConfirm then
+                deleteConfirm = true
+                local btn = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
+                if btn then btn.Text = "Klik lagi untuk konfirmasi!" end
+                deleteBtnFrame.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+                if deleteThread then task.cancel(deleteThread) end
+                deleteThread = task.delay(3, function()
+                    deleteConfirm = false
+                    local b = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
+                    if b then b.Text = "Delete Config File" end
+                    deleteBtnFrame.BackgroundColor3 = colors.primary
+                end)
+            else
+                if deleteThread then task.cancel(deleteThread) end
                 deleteConfirm = false
-                local b = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
-                if b then b.Text = "Delete Config File" end
+                local btn = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
+                if btn then btn.Text = "Delete Config File" end
                 deleteBtnFrame.BackgroundColor3 = colors.primary
-            end)
-        else
-            if deleteThread then task.cancel(deleteThread) end
-            deleteConfirm = false
-            local btn = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
-            if btn then btn.Text = "Delete Config File" end
-            deleteBtnFrame.BackgroundColor3 = colors.primary
-            Library.ConfigSystem.Delete()
-            self:MakeNotify({
-                Title       = "Config",
-                Description = "File config telah dihapus.",
-                Color       = Color3.fromRGB(220, 50, 50),
-                Delay       = 2,
-            })
+                Library.ConfigSystem.Delete()
+                self:MakeNotify({
+                    Title       = "Config",
+                    Description = "File config telah dihapus.",
+                    Color       = Color3.fromRGB(220, 50, 50),
+                    Delay       = 2,
+                })
+            end
         end
-    end)
+    })
 end
 
 function Library:Window(config)
