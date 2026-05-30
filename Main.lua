@@ -73,13 +73,16 @@ local function new(class, props)
     if props then
         local fontVal = props.Font
         local fontFaceVal = props.FontFace
+        local parentVal = props.Parent
+        
         for k, v in pairs(props) do
-            if k ~= "Font" and k ~= "FontFace" then
+            if k ~= "Font" and k ~= "FontFace" and k ~= "Parent" then
                 inst[k] = v
             end
         end
         if fontVal then inst.Font = fontVal end
         if fontFaceVal then inst.FontFace = fontFaceVal end
+        if parentVal then inst.Parent = parentVal end
     end
     if (class == "TextLabel" or class == "TextButton" or class == "TextBox") and not props then
         inst.Font = Enum.Font.Gotham
@@ -783,12 +786,11 @@ function Library:CreateCategory(parent, title, startOpen)
         BackgroundColor3 = colors.bg2,
         BackgroundTransparency = sectionTransparency,
         BorderSizePixel = 0,
-        AutomaticSize = Enum.AutomaticSize.Y,
         ClipsDescendants = true,
         ZIndex = 6
     })
     new("UICorner", {Parent = categoryFrame, CornerRadius = UDim.new(0, 4)})
-    new("UIListLayout", {
+    local categoryLayout = new("UIListLayout", {
         Parent = categoryFrame,
         Padding = UDim.new(0, 0),
         SortOrder = Enum.SortOrder.LayoutOrder
@@ -831,7 +833,6 @@ function Library:CreateCategory(parent, title, startOpen)
         LayoutOrder = 2,
         BackgroundTransparency = 1,
         Visible = startOpen,
-        AutomaticSize = Enum.AutomaticSize.Y,
         ZIndex = 7
     })
     new("UIPadding", {
@@ -840,14 +841,34 @@ function Library:CreateCategory(parent, title, startOpen)
         PaddingRight = UDim.new(0, 10),
         PaddingBottom = UDim.new(0, 6)
     })
-    new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
+    local contentLayout = new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
     local isOpen = startOpen
     arrow.Rotation = startOpen and 180 or 0
+
+    local function updateSize()
+        local h = sectionHeaderHeight
+        if isOpen then
+            local contentHeight = contentLayout.AbsoluteContentSize.Y
+            contentContainer.Size = UDim2.new(1, 0, 0, contentHeight + 6)
+            h = h + contentHeight + 6
+        end
+        categoryFrame.Size = UDim2.new(1, 0, 0, h)
+    end
+
+    self:AddConnection("categoryContentSize_" .. tostring(contentContainer), contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSize))
+
     header.MouseButton1Click:Connect(function()
         isOpen = not isOpen
         contentContainer.Visible = isOpen
         arrow.Rotation = isOpen and 180 or 0
+        updateSize()
+        
+        -- Beri sedikit jeda agar Roblox Engine selesai merender UI-nya 
+        -- sebelum memastikan ukurannya benar-benar pas.
+        task.defer(updateSize)
+        task.delay(0.05, updateSize)
     end)
+    task.defer(updateSize)
     return contentContainer
 end
 function Library:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
@@ -1024,18 +1045,20 @@ function Library:_hideDropdown()
         self._dropdownOverlay.Visible = false
     end
 end
-function Library:CreateDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue)
+function Library:_createBaseDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue, isMulti)
     self:_initDropdownSystem()
     local dropdownLayoutOrder = self._dropdownCount
     self._dropdownCount = self._dropdownCount + 1
+    
     local dropdownFrame = new("Frame", {
         Parent = parent,
         Size = UDim2.new(1, 0, 0, 28),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ZIndex = 7,
-        Name = uniqueId or "Dropdown"
+        Name = uniqueId or (isMulti and "MultiDropdown" or "Dropdown")
     })
+    
     local dropdownButton = new("TextButton", {
         Parent = dropdownFrame,
         Text = "",
@@ -1043,10 +1066,11 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         Size = UDim2.new(1, 0, 1, 0),
         ZIndex = 8
     })
+    
     local dropdownTitle = new("TextLabel", {
         Parent = dropdownFrame,
         Font = Enum.Font.GothamBold,
-        Text = title or "Dropdown",
+        Text = title or (isMulti and "Multi Select" or "Dropdown"),
         TextColor3 = colors.text,
         TextSize = fontSize.small,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -1055,6 +1079,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         Size = UDim2.new(0.5, 0, 1, 0),
         ZIndex = 8
     })
+    
     local selectFrame = new("Frame", {
         Parent = dropdownFrame,
         AnchorPoint = Vector2.new(1, 0.5),
@@ -1067,10 +1092,12 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
     })
     new("UICorner", {Parent = selectFrame, CornerRadius = UDim.new(0, 4)})
     new("UIStroke", {Parent = selectFrame, Color = colors.border, Thickness = 1, Transparency = 0.5})
+    
+    local defaultText = isMulti and "Select Options" or "Select Option"
     local optionLabel = new("TextLabel", {
         Parent = selectFrame,
         Font = Enum.Font.GothamBold,
-        Text = "Select Option",
+        Text = defaultText,
         TextColor3 = colors.textDim,
         TextSize = fontSize.small,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -1081,7 +1108,8 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         Size = UDim2.new(1, -24, 1, 0),
         ZIndex = 9
     })
-    local optionImg = new("ImageLabel", {
+    
+    new("ImageLabel", {
         Parent = selectFrame,
         Image = "rbxassetid://6031091004",
         ImageColor3 = colors.primary,
@@ -1091,12 +1119,14 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         Size = UDim2.new(0, 11, 0, 11),
         ZIndex = 9
     })
+    
     local dropdownContainer = new("Frame", {
         Parent = self._dropdownFolder,
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
         LayoutOrder = dropdownLayoutOrder
     })
+    
     local searchBox = new("TextBox", {
         Parent = dropdownContainer,
         PlaceholderText = "Search...",
@@ -1116,6 +1146,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
     new("UICorner", {Parent = searchBox, CornerRadius = UDim.new(0, 4)})
     new("UIStroke", {Parent = searchBox, Color = colors.border, Thickness = 1, Transparency = 0.5})
     new("UIPadding", {Parent = searchBox, PaddingLeft = UDim.new(0, 8)})
+    
     local scrollSelect = new("ScrollingFrame", {
         Parent = dropdownContainer,
         Size = UDim2.new(1, -8, 1, -36),
@@ -1129,21 +1160,26 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ZIndex = 154
     })
+    
     local listLayout = new("UIListLayout", {
         Parent = scrollSelect,
         Padding = UDim.new(0, 3),
         SortOrder = Enum.SortOrder.LayoutOrder
     })
+    
     self:AddConnection("dropdownLayout_" .. dropdownLayoutOrder, listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         scrollSelect.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
     end))
+    
     local savedValue = configPath and Library.ConfigSystem.Get(configPath, defaultValue) or defaultValue
+    if isMulti and type(savedValue) ~= "table" then savedValue = {} end
+    
     local DropdownFunc = { Value = savedValue, Options = items }
     local optionFrameCache = {}
     local optionConns = {}
     local searchThread = nil
-    local buildThread = nil
     local isBuilt = false
+    
     local function disconnectOptionConns()
         for i = #optionConns, 1, -1 do
             local c = optionConns[i]
@@ -1151,27 +1187,42 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
             pcall(function() c:Disconnect() end)
         end
     end
+    
     local function clearOptionFrames()
-        if buildThread then
-            pcall(function() task.cancel(buildThread) end)
-            buildThread = nil
-        end
         disconnectOptionConns()
+        
+        -- Batch penghapusan Frame lama agar tidak lag saat refresh
+        local framesToDelete = {}
         for _, child in scrollSelect:GetChildren() do
-            if child.Name == "Option" then
-                child:Destroy()
+            if child:IsA("Frame") then 
+                table.insert(framesToDelete, child)
             end
         end
+        
+        if #framesToDelete > 0 then
+            task.spawn(function()
+                local deleteBatch = 40
+                for i, frame in ipairs(framesToDelete) do
+                    frame:Destroy()
+                    if i % deleteBatch == 0 then
+                        task.wait()
+                    end
+                end
+            end)
+        end
+        
         table.clear(optionFrameCache)
         isBuilt = false
     end
+    
     local function refreshSelectionVisuals()
         local texts = {}
         for _, entry in ipairs(optionFrameCache) do
             local opt = entry.frame
             if opt and opt.Parent then
                 local v = opt:GetAttribute("RealValue")
-                local selected = (DropdownFunc.Value == v)
+                local selected = isMulti and table.find(DropdownFunc.Value, v) or (not isMulti and DropdownFunc.Value == v)
+                
                 if selected then
                     opt.ChooseFrame.Size = UDim2.new(0, 3, 0, 16)
                     opt.ChooseFrame.UIStroke.Transparency = 0.35
@@ -1188,33 +1239,42 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
                 end
             end
         end
-        optionLabel.Text = (#texts == 0) and "Select Option" or table.concat(texts, ", ")
+        optionLabel.Text = (#texts == 0) and defaultText or table.concat(texts, ", ")
     end
+    
     local function ensureBuilt()
         if isBuilt then return end
         clearOptionFrames()
         local list = DropdownFunc.Options or {}
-        for _, opt in ipairs(list) do
+        
+        -- Menggunakan teknik "yield" saat merender ratusan item
+        -- agar engine tidak freeze/lag saat membangun frame
+        local batchSize = 100
+        for i, opt in ipairs(list) do
             DropdownFunc:AddOption(opt)
+            if i % batchSize == 0 then
+                task.wait()
+            end
         end
         isBuilt = true
         refreshSelectionVisuals()
     end
+    
     function DropdownFunc:Clear()
         clearOptionFrames()
-        DropdownFunc.Value = nil
+        DropdownFunc.Value = isMulti and {} or nil
         DropdownFunc.Options = {}
-        optionLabel.Text = "Select Option"
+        optionLabel.Text = defaultText
     end
+    
     function DropdownFunc:AddOption(option)
         local label, value
         if typeof(option) == "table" and option.Label and option.Value ~= nil then
-            label = tostring(option.Label)
-            value = option.Value
+            label, value = tostring(option.Label), option.Value
         else
-            label = tostring(option)
-            value = option
+            label, value = tostring(option), option
         end
+        
         local optionFrame = new("Frame", {
             Parent = scrollSelect,
             BackgroundColor3 = colors.bg2,
@@ -1225,6 +1285,7 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         })
         new("UICorner", {Parent = optionFrame, CornerRadius = UDim.new(0, 3)})
         new("UIStroke", {Parent = optionFrame, Color = colors.border, Thickness = 1, Transparency = 0.65})
+        
         local optionButton = new("TextButton", {
             Parent = optionFrame,
             BackgroundTransparency = 1,
@@ -1232,7 +1293,8 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
             Text = "",
             ZIndex = 156
         })
-        local optText = new("TextLabel", {
+        
+        new("TextLabel", {
             Parent = optionFrame,
             Font = Enum.Font.GothamBold,
             Text = label,
@@ -1246,7 +1308,9 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
             Name = "OptionText",
             ZIndex = 156
         })
+        
         optionFrame:SetAttribute("RealValue", value)
+        
         local chooseFrame = new("Frame", {
             Parent = optionFrame,
             AnchorPoint = Vector2.new(0, 0.5),
@@ -1258,14 +1322,31 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         })
         new("UIStroke", {Parent = chooseFrame, Color = colors.primary, Thickness = 1.6, Transparency = 0.999})
         new("UICorner", {Parent = chooseFrame, CornerRadius = UDim.new(0, 3)})
+        
         local conn = optionButton.Activated:Connect(function()
-            DropdownFunc.Value = value
+            if isMulti then
+                if not table.find(DropdownFunc.Value, value) then
+                    table.insert(DropdownFunc.Value, value)
+                else
+                    for i, v in pairs(DropdownFunc.Value) do
+                        if v == value then
+                            table.remove(DropdownFunc.Value, i)
+                            break
+                        end
+                    end
+                end
+            else
+                DropdownFunc.Value = value
+            end
             DropdownFunc:Set(DropdownFunc.Value)
         end)
+        
         table.insert(optionConns, conn)
         table.insert(optionFrameCache, {frame = optionFrame, lowerLabel = string.lower(label)})
     end
+    
     function DropdownFunc:Set(Value)
+        if isMulti and type(Value) ~= "table" then Value = {} end
         DropdownFunc.Value = Value
         if configPath then
             Library.ConfigSystem.Set(configPath, Value)
@@ -1274,33 +1355,50 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         if isBuilt then
             refreshSelectionVisuals()
         else
-            optionLabel.Text = (DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or "Select Option"
+            if isMulti then
+                optionLabel.Text = (#DropdownFunc.Value == 0) and defaultText or table.concat(DropdownFunc.Value, ", ")
+            else
+                optionLabel.Text = (DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or defaultText
+            end
         end
         if onSelect then
-            local str = (DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or ""
-            onSelect(str)
+            if isMulti then
+                onSelect(DropdownFunc.Value)
+            else
+                onSelect((DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or "")
+            end
         end
     end
-    function DropdownFunc:SetValue(val)
-        self:Set(val)
-    end
-    function DropdownFunc:GetValue()
-        return self.Value
-    end
+    
+    function DropdownFunc:SetValue(val) self:Set(val) end
+    function DropdownFunc:GetValue() return self.Value end
+    
     function DropdownFunc:SetValues(newList, selecting)
         newList = newList or {}
-        selecting = selecting or nil
+        selecting = selecting or (isMulti and {} or nil)
+        if isMulti and type(selecting) ~= "table" then selecting = {} end
         clearOptionFrames()
         DropdownFunc.Options = newList
-        for _, opt in ipairs(newList) do
-            DropdownFunc:AddOption(opt)
-        end
-        isBuilt = true
-        DropdownFunc:Set(selecting)
+        
+        -- Kita masukkan pembuatan elemen ke dalam task.spawn agar background UI
+        -- tidak menunggu operasi pemrosesan array besar selesai secara kaku.
+        task.spawn(function()
+            local batchSize = 100
+            for i, opt in ipairs(newList) do
+                DropdownFunc:AddOption(opt)
+                if i % batchSize == 0 then
+                    task.wait()
+                end
+            end
+            isBuilt = true
+            DropdownFunc:Set(selecting)
+        end)
     end
+    
     function DropdownFunc:Refresh(newList)
-        self:SetValues(newList, nil)
+        self:SetValues(newList, isMulti and {} or nil)
     end
+    
     self:AddConnection("searchBox_" .. dropdownLayoutOrder, searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         ensureBuilt()
         if searchThread then
@@ -1308,15 +1406,22 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
             searchThread = nil
         end
         local query = string.lower(searchBox.Text)
+        if query == "" then
+            for _, entry in ipairs(optionFrameCache) do
+                if entry.frame and entry.frame.Parent then entry.frame.Visible = true end
+            end
+            return
+        end
         searchThread = task.delay(0.08, function()
             searchThread = nil
             for _, entry in ipairs(optionFrameCache) do
                 if entry.frame and entry.frame.Parent then
-                    entry.frame.Visible = query == "" or string.find(entry.lowerLabel, query, 1, true) ~= nil
+                    entry.frame.Visible = string.find(entry.lowerLabel, query, 1, true) ~= nil
                 end
             end
         end)
     end))
+    
     self:AddConnection("dropdownOpen_" .. dropdownLayoutOrder, dropdownButton.Activated:Connect(function()
         ensureBuilt()
         searchBox.Text = ""
@@ -1327,354 +1432,42 @@ function Library:CreateDropdown(parent, title, imageId, items, configPath, onSel
         end
         self:_showDropdown(dropdownContainer)
     end))
+    
     DropdownFunc:SetValues(items, savedValue)
+    
     if configPath then
-        RegisterCallback(configPath, onSelect, "dropdown", defaultValue, function(val)
+        local cbType = isMulti and "multidropdown" or "dropdown"
+        local cbDef = isMulti and (defaultValue or {}) or defaultValue
+        RegisterCallback(configPath, onSelect, cbType, cbDef, function(val)
+            if isMulti and type(val) ~= "table" then val = {} end
             DropdownFunc.Value = val
             if isBuilt then
                 refreshSelectionVisuals()
             else
-                optionLabel.Text = (val ~= nil) and tostring(val) or "Select Option"
+                if isMulti then
+                    optionLabel.Text = (#val == 0) and defaultText or table.concat(val, ", ")
+                else
+                    optionLabel.Text = (val ~= nil) and tostring(val) or defaultText
+                end
             end
         end)
     end
+    
     if uniqueId then
         self.flags[uniqueId] = DropdownFunc
     end
+    
     return dropdownFrame
 end
 
-function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValues)
-    self:_initDropdownSystem()
-    local dropdownLayoutOrder = self._dropdownCount
-    self._dropdownCount = self._dropdownCount + 1
-    local dropdownFrame = new("Frame", {
-        Parent = parent,
-        Size = UDim2.new(1, 0, 0, 28),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ZIndex = 7,
-        Name = uniqueId or "MultiDropdown"
-    })
-    local dropdownButton = new("TextButton", {
-        Parent = dropdownFrame,
-        Text = "",
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0),
-        ZIndex = 8
-    })
-    local dropdownTitle = new("TextLabel", {
-        Parent = dropdownFrame,
-        Font = Enum.Font.GothamBold,
-        Text = title or "Multi Select",
-        TextColor3 = colors.text,
-        TextSize = fontSize.small,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(0.5, 0, 1, 0),
-        ZIndex = 8
-    })
-    local selectFrame = new("Frame", {
-        Parent = dropdownFrame,
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = colors.bg2,
-        BackgroundTransparency = sectionTransparency,
-        Position = UDim2.new(1, 0, 0.5, 0),
-        Size = UDim2.new(0.48, 0, 0, 22),
-        LayoutOrder = dropdownLayoutOrder,
-        ZIndex = 8
-    })
-    new("UICorner", {Parent = selectFrame, CornerRadius = UDim.new(0, 4)})
-    new("UIStroke", {Parent = selectFrame, Color = colors.border, Thickness = 1, Transparency = 0.5})
-    local optionLabel = new("TextLabel", {
-        Parent = selectFrame,
-        Font = Enum.Font.GothamBold,
-        Text = "Select Options",
-        TextColor3 = colors.textDim,
-        TextSize = fontSize.small,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 8, 0.5, 0),
-        Size = UDim2.new(1, -24, 1, 0),
-        ZIndex = 9
-    })
-    local optionImg = new("ImageLabel", {
-        Parent = selectFrame,
-        Image = "rbxassetid://6031091004",
-        ImageColor3 = colors.primary,
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundTransparency = 1,
-        Position = UDim2.new(1, -6, 0.5, 0),
-        Size = UDim2.new(0, 11, 0, 11),
-        ZIndex = 9
-    })
-    local dropdownContainer = new("Frame", {
-        Parent = self._dropdownFolder,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        LayoutOrder = dropdownLayoutOrder
-    })
-    local searchBox = new("TextBox", {
-        Parent = dropdownContainer,
-        PlaceholderText = "Search...",
-        Font = Enum.Font.GothamBold,
-        Text = "",
-        TextSize = fontSize.small,
-        TextColor3 = colors.text,
-        PlaceholderColor3 = colors.textDimmer,
-        BackgroundColor3 = colors.bg2,
-        BackgroundTransparency = sectionTransparency,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, -8, 0, 24),
-        Position = UDim2.new(0, 4, 0, 4),
-        ClearTextOnFocus = false,
-        ZIndex = 154
-    })
-    new("UICorner", {Parent = searchBox, CornerRadius = UDim.new(0, 4)})
-    new("UIStroke", {Parent = searchBox, Color = colors.border, Thickness = 1, Transparency = 0.5})
-    new("UIPadding", {Parent = searchBox, PaddingLeft = UDim.new(0, 8)})
-    local scrollSelect = new("ScrollingFrame", {
-        Parent = dropdownContainer,
-        Size = UDim2.new(1, -8, 1, -36),
-        Position = UDim2.new(0, 4, 0, 32),
-        ScrollBarImageTransparency = 0.35,
-        ScrollBarImageColor3 = colors.primary,
-        BorderSizePixel = 0,
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 3,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ZIndex = 154
-    })
-    local listLayout = new("UIListLayout", {
-        Parent = scrollSelect,
-        Padding = UDim.new(0, 3),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    })
-    self:AddConnection("multiDropdownLayout_" .. dropdownLayoutOrder, listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scrollSelect.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
-    end))
-    local savedValues = configPath and Library.ConfigSystem.Get(configPath, defaultValues or {}) or (defaultValues or {})
-    if type(savedValues) ~= "table" then savedValues = {} end
-    local DropdownFunc = { Value = savedValues, Options = items }
-    local optionFrameCache = {}
-    local optionConns = {}
-    local searchThread = nil
-    local buildThread = nil
-    local isBuilt = false
-    local function disconnectOptionConns()
-        for i = #optionConns, 1, -1 do
-            local c = optionConns[i]
-            optionConns[i] = nil
-            pcall(function() c:Disconnect() end)
-        end
-    end
-    local function clearOptionFrames()
-        if buildThread then
-            pcall(function() task.cancel(buildThread) end)
-            buildThread = nil
-        end
-        disconnectOptionConns()
-        for _, child in scrollSelect:GetChildren() do
-            if child.Name == "Option" then
-                child:Destroy()
-            end
-        end
-        table.clear(optionFrameCache)
-        isBuilt = false
-    end
-    local function refreshSelectionVisuals()
-        local texts = {}
-        for _, entry in ipairs(optionFrameCache) do
-            local opt = entry.frame
-            if opt and opt.Parent then
-                local v = opt:GetAttribute("RealValue")
-                local selected = table.find(DropdownFunc.Value, v)
-                if selected then
-                    opt.ChooseFrame.Size = UDim2.new(0, 3, 0, 16)
-                    opt.ChooseFrame.UIStroke.Transparency = 0.35
-                    opt.BackgroundColor3 = colors.bg3
-                    opt.BackgroundTransparency = panelTransparency
-                    opt.OptionText.TextColor3 = colors.text
-                    table.insert(texts, opt.OptionText.Text)
-                else
-                    opt.ChooseFrame.Size = UDim2.new(0, 0, 0, 0)
-                    opt.ChooseFrame.UIStroke.Transparency = 1
-                    opt.BackgroundColor3 = colors.bg2
-                    opt.BackgroundTransparency = 0.5
-                    opt.OptionText.TextColor3 = colors.textDim
-                end
-            end
-        end
-        optionLabel.Text = (#texts == 0) and "Select Options" or table.concat(texts, ", ")
-    end
-    local function ensureBuilt()
-        if isBuilt then return end
-        clearOptionFrames()
-        local list = DropdownFunc.Options or {}
-        for _, opt in ipairs(list) do
-            DropdownFunc:AddOption(opt)
-        end
-        isBuilt = true
-        refreshSelectionVisuals()
-    end
-    function DropdownFunc:Clear()
-        clearOptionFrames()
-        DropdownFunc.Value = {}
-        DropdownFunc.Options = {}
-        optionLabel.Text = "Select Options"
-    end
-    function DropdownFunc:AddOption(option)
-        local label, value
-        if typeof(option) == "table" and option.Label and option.Value ~= nil then
-            label = tostring(option.Label)
-            value = option.Value
-        else
-            label = tostring(option)
-            value = option
-        end
-        local optionFrame = new("Frame", {
-            Parent = scrollSelect,
-            BackgroundColor3 = colors.bg2,
-            BackgroundTransparency = 0.5,
-            Size = UDim2.new(1, 0, 0, 26),
-            Name = "Option",
-            ZIndex = 155
-        })
-        new("UICorner", {Parent = optionFrame, CornerRadius = UDim.new(0, 3)})
-        new("UIStroke", {Parent = optionFrame, Color = colors.border, Thickness = 1, Transparency = 0.65})
-        local optionButton = new("TextButton", {
-            Parent = optionFrame,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 1, 0),
-            Text = "",
-            ZIndex = 156
-        })
-        local optText = new("TextLabel", {
-            Parent = optionFrame,
-            Font = Enum.Font.GothamBold,
-            Text = label,
-            TextSize = fontSize.small,
-            TextColor3 = colors.text,
-            Position = UDim2.new(0, 8, 0, 0),
-            Size = UDim2.new(1, -16, 1, 0),
-            BackgroundTransparency = 1,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            Name = "OptionText",
-            ZIndex = 156
-        })
-        optionFrame:SetAttribute("RealValue", value)
-        local chooseFrame = new("Frame", {
-            Parent = optionFrame,
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundColor3 = colors.primary,
-            Position = UDim2.new(0, 2, 0.5, 0),
-            Size = UDim2.new(0, 0, 0, 0),
-            Name = "ChooseFrame",
-            ZIndex = 156
-        })
-        new("UIStroke", {Parent = chooseFrame, Color = colors.primary, Thickness = 1.6, Transparency = 0.999})
-        new("UICorner", {Parent = chooseFrame, CornerRadius = UDim.new(0, 3)})
-        local conn = optionButton.Activated:Connect(function()
-            if not table.find(DropdownFunc.Value, value) then
-                table.insert(DropdownFunc.Value, value)
-            else
-                for i, v in pairs(DropdownFunc.Value) do
-                    if v == value then
-                        table.remove(DropdownFunc.Value, i)
-                        break
-                    end
-                end
-            end
-            DropdownFunc:Set(DropdownFunc.Value)
-        end)
-        table.insert(optionConns, conn)
-        table.insert(optionFrameCache, {frame = optionFrame, lowerLabel = string.lower(label)})
-    end
-    function DropdownFunc:Set(Value)
-        if type(Value) ~= "table" then Value = {} end
-        DropdownFunc.Value = Value
-        if configPath then
-            Library.ConfigSystem.Set(configPath, Value)
-            MarkDirty()
-        end
-        if isBuilt then
-            refreshSelectionVisuals()
-        else
-            optionLabel.Text = (#DropdownFunc.Value == 0) and "Select Options" or table.concat(DropdownFunc.Value, ", ")
-        end
-        if onSelect then
-            onSelect(DropdownFunc.Value)
-        end
-    end
-    function DropdownFunc:SetValue(val)
-        self:Set(val)
-    end
-    function DropdownFunc:GetValue()
-        return self.Value
-    end
-    function DropdownFunc:SetValues(newList, selecting)
-        newList = newList or {}
-        selecting = selecting or {}
-        if type(selecting) ~= "table" then selecting = {} end
-        clearOptionFrames()
-        DropdownFunc.Options = newList
-        for _, opt in ipairs(newList) do
-            DropdownFunc:AddOption(opt)
-        end
-        isBuilt = true
-        DropdownFunc:Set(selecting)
-    end
-    function DropdownFunc:Refresh(newList)
-        self:SetValues(newList, {})
-    end
-    self:AddConnection("multiSearchBox_" .. dropdownLayoutOrder, searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        ensureBuilt()
-        if searchThread then
-            pcall(function() task.cancel(searchThread) end)
-            searchThread = nil
-        end
-        local query = string.lower(searchBox.Text)
-        searchThread = task.delay(0.08, function()
-            searchThread = nil
-            for _, entry in ipairs(optionFrameCache) do
-                if entry.frame and entry.frame.Parent then
-                    entry.frame.Visible = query == "" or string.find(entry.lowerLabel, query, 1, true) ~= nil
-                end
-            end
-        end)
-    end))
-    self:AddConnection("multiDropdownOpen_" .. dropdownLayoutOrder, dropdownButton.Activated:Connect(function()
-        ensureBuilt()
-        searchBox.Text = ""
-        for _, entry in ipairs(optionFrameCache) do
-            if entry.frame and entry.frame.Parent then
-                entry.frame.Visible = true
-            end
-        end
-        self:_showDropdown(dropdownContainer)
-    end))
-    DropdownFunc:SetValues(items, savedValues)
-    if configPath then
-        RegisterCallback(configPath, onSelect, "multidropdown", defaultValues or {}, function(val)
-            if type(val) ~= "table" then val = {} end
-            DropdownFunc.Value = val
-            if isBuilt then
-                refreshSelectionVisuals()
-            else
-                optionLabel.Text = (#val == 0) and "Select Options" or table.concat(val, ", ")
-            end
-        end)
-    end
-    if uniqueId then
-        self.flags[uniqueId] = DropdownFunc
-    end
-    return dropdownFrame
+function Library:CreateDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue)
+    return self:_createBaseDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue, false)
 end
+
+function Library:CreateMultiDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValues)
+    return self:_createBaseDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValues, true)
+end
+
 function Library:CreateInput(parent, label, configPath, defaultValue, callback)
     local frame = new("Frame", {Parent = parent, Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, ZIndex = 7})
     new("TextLabel", {
@@ -1704,8 +1497,8 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         Size = UDim2.new(1, -10, 1, 0),
         Position = UDim2.new(0, 5, 0, 0),
         BackgroundTransparency = 1,
-        Text = tostring(initialValue),
-        PlaceholderText = "0.00",
+        Text = initialValue ~= nil and tostring(initialValue) or "",
+        PlaceholderText = "Enter Value",
         Font = Enum.Font.GothamBold,
         TextSize = fontSize.small,
         TextColor3 = colors.text,
@@ -1757,132 +1550,44 @@ function Library:CreateButton(parent, label, callback)
         AutoButtonColor = false,
         ZIndex = 9
     })
-    local activeTween = nil
-    local clicking = false
-    self:AddConnection("btn_" .. label .. tostring(button), button.MouseButton1Click:Connect(function()
-        if clicking then return end
-        clicking = true
-        if activeTween then
-            activeTween:Cancel()
-            activeTween = nil
-        end
-        local tweenIn = TweenService:Create(btnFrame, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            BackgroundTransparency = 0,
-            Size = UDim2.new(1, -4, 0, 26)
-        })
-        activeTween = tweenIn
-        tweenIn:Play()
-        tweenIn.Completed:Wait()
-        pcall(callback)
-        local tweenOut = TweenService:Create(btnFrame, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            BackgroundTransparency = panelTransparency,
-            Size = UDim2.new(1, 0, 0, 28)
-        })
-        activeTween = tweenOut
-        tweenOut:Play()
-        tweenOut.Completed:Wait()
-        activeTween = nil
-        clicking = false
+    
+    local isClicking = false
+    local darkerColor = Color3.new(colors.primary.R * 0.7, colors.primary.G * 0.7, colors.primary.B * 0.7)
+    
+    self:AddConnection("btn_" .. label .. tostring(button), button.MouseButton1Down:Connect(function()
+        if isClicking then return end
+        btnFrame.BackgroundColor3 = darkerColor
+        btnFrame.BackgroundTransparency = 0
     end))
-    return btnFrame
-end
-function Library:CreateTextBox(parent, label, placeholder, configPath, defaultValue, callback)
-    local container = new("Frame", {
-        Parent = parent,
-        Size = UDim2.new(1, 0, 0, 48),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ZIndex = 7
-    })
-    new("TextLabel", {
-        Parent = container,
-        Size = UDim2.new(1, 0, 0, 14),
-        Position = UDim2.new(0, 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = label,
-        Font = Enum.Font.GothamBold,
-        TextSize = fontSize.small,
-        TextColor3 = colors.text,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 8
-    })
-    local initialValue = configPath and Library.ConfigSystem.Get(configPath, defaultValue) or (defaultValue or "")
-    local textBox = new("TextBox", {
-        Parent = container,
-        Size = UDim2.new(1, 0, 0, 28),
-        Position = UDim2.new(0, 0, 0, 18),
-        BackgroundColor3 = colors.bg3,
-        BackgroundTransparency = panelTransparency,
-        BorderSizePixel = 0,
-        Text = tostring(initialValue),
-        PlaceholderText = placeholder or "",
-        Font = Enum.Font.Gotham,
-        TextSize = fontSize.small,
-        TextColor3 = colors.text,
-        PlaceholderColor3 = colors.textDimmer,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ClipsDescendants = true,
-        ClearTextOnFocus = false,
-        ZIndex = 8
-    })
-    new("UICorner", {Parent = textBox, CornerRadius = UDim.new(0, 5)})
-    new("UIPadding", {Parent = textBox, PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)})
-    local lastValue = initialValue
-    self:AddConnection("textbox_" .. label .. tostring(textBox), textBox.FocusLost:Connect(function()
-        local value = textBox.Text
-        if value ~= lastValue then
-            lastValue = value
-            if configPath then
-                Library.ConfigSystem.Set(configPath, value)
-                MarkDirty()
-            end
-            if callback then callback(value) end
-        end
+
+    self:AddConnection("btn_up_" .. label .. tostring(button), button.MouseButton1Up:Connect(function()
+        btnFrame.BackgroundColor3 = colors.primary
+        btnFrame.BackgroundTransparency = panelTransparency
     end))
-    if configPath then
-        RegisterCallback(configPath, callback, "input", defaultValue, function(val)
-            local v = tostring(val ~= nil and val or defaultValue or "")
-            textBox.Text = v
-            lastValue = v
+
+    self:AddConnection("btn_leave_" .. label .. tostring(button), button.MouseLeave:Connect(function()
+        btnFrame.BackgroundColor3 = colors.primary
+        btnFrame.BackgroundTransparency = panelTransparency
+    end))
+
+    self:AddConnection("btn_click_" .. label .. tostring(button), button.MouseButton1Click:Connect(function()
+        if isClicking then return end
+        isClicking = true
+        
+        -- Jalankan callback di thread terpisah agar tidak membekukan UI
+        if callback then
+            task.spawn(function()
+                pcall(callback)
+            end)
+        end
+        
+        -- Anti-spam klik cepat
+        task.delay(0.1, function()
+            isClicking = false
         end)
-    end
-    if callback then
-        local resolved = tostring(initialValue)
-        callback(resolved)
-    end
-    return {Container = container, TextBox = textBox, SetValue = function(v) textBox.Text = tostring(v) lastValue = tostring(v) end}
-end
-function Library:AddTab(name, imageId, order)
-    return self:CreatePage(name, name, imageId, order)
-end
-
-function Library:AddSection(parent, title, startOpen)
-    return self:CreateCategory(parent, title, startOpen)
-end
-
-function Library:AddToggle(parent, label, configPath, callback, disableSave, defaultValue)
-    return self:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
-end
-
-function Library:AddDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue)
-    return self:CreateDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValue)
-end
-
-function Library:AddMultiDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValues)
-    return self:CreateMultiDropdown(parent, title, imageId, items, configPath, onSelect, uniqueId, defaultValues)
-end
-
-function Library:AddInput(parent, label, configPath, defaultValue, callback)
-    return self:CreateInput(parent, label, configPath, defaultValue, callback)
-end
-
-function Library:AddButton(parent, label, callback)
-    return self:CreateButton(parent, label, callback)
-end
-
-function Library:AddTextBox(parent, label, placeholder, configPath, defaultValue, callback)
-    return self:CreateTextBox(parent, label, placeholder, configPath, defaultValue, callback)
+    end))
+    
+    return btnFrame
 end
 
 function Library:Initialize()
@@ -1906,12 +1611,7 @@ function Library:Initialize()
         end
     end))
 end
-function Library:LoadConfig(data)
-    if type(data) ~= "table" then return end
-    CurrentConfig = data
-    ExecuteConfigCallbacks()
-    Library.ConfigSystem.Save()
-end
+
 function Library:MakeNotify(config)
     config = config or {}
     local title   = config.Title or "Notification"
@@ -2268,29 +1968,6 @@ function Library:Window(config)
                 }
                 return dropdownObj
             end
-            function SectionObject:AddMultiDropdown(dropdownConfig)
-                dropdownConfig = dropdownConfig or {}
-                local title      = dropdownConfig.Title or "Multi Select"
-                local options    = dropdownConfig.Options or {}
-                local default    = dropdownConfig.Default or {}
-                local callback   = dropdownConfig.Callback
-                local noSave     = dropdownConfig.NoSave or false
-                local configPath = noSave and nil or ("MultiDropdowns." .. title:gsub("%s+", "_"))
-                local uniqueId   = title:gsub("%s+", "_")
-                local frame = self._library:CreateMultiDropdown(self._container, title, nil, options, configPath, callback, uniqueId, default)
-                if frame then frame.LayoutOrder = getNextLayoutOrder() end
-                local dropdownObj = {
-                    _options = options,
-                    SetOptions = function(self, newOptions)
-                        self._options = newOptions
-                        local flagObj = Library.flags[uniqueId]
-                        if flagObj and flagObj.Refresh then
-                            flagObj:Refresh(newOptions)
-                        end
-                    end
-                }
-                return dropdownObj
-            end
             function SectionObject:AddInput(inputConfig)
                 inputConfig = inputConfig or {}
                 local title       = inputConfig.Title or "Input"
@@ -2299,29 +1976,12 @@ function Library:Window(config)
                 local callback    = inputConfig.Callback
                 local noSave      = inputConfig.NoSave or false
                 local configPath  = noSave and nil or ("Inputs." .. title:gsub("%s+", "_"))
-                if placeholder ~= "" then
-                    local textBoxObj = self._library:CreateTextBox(self._container, title, placeholder, configPath, default, callback)
-                    if textBoxObj and textBoxObj.Container then textBoxObj.Container.LayoutOrder = getNextLayoutOrder() end
-                    return {
-                        SetValue = function(self, val)
-                            if textBoxObj and textBoxObj.SetValue then
-                                textBoxObj.SetValue(val)
-                            end
-                        end,
-                        GetValue = function(self)
-                            if textBoxObj and textBoxObj.TextBox then
-                                return textBoxObj.TextBox.Text
-                            end
-                            return default
-                        end
-                    }
-                else
-                    local frame = self._library:CreateInput(self._container, title, configPath, default, callback)
-                    if frame then frame.LayoutOrder = getNextLayoutOrder() end
-                    return {
-                        SetValue = function(self, val) end
-                    }
-                end
+                
+                local frame = self._library:CreateInput(self._container, title, configPath, default, callback)
+                if frame then frame.LayoutOrder = getNextLayoutOrder() end
+                return {
+                    SetValue = function(self, val) end
+                }
             end
             function SectionObject:AddButton(buttonConfig)
                 buttonConfig = buttonConfig or {}
@@ -2339,32 +1999,47 @@ function Library:Window(config)
                 local frame = new("Frame", {
                     Parent = self._container,
                     Size = UDim2.new(1, 0, 0, 0),
-                    BackgroundTransparency = 1,
+                    BackgroundColor3 = colors.bg2,
+                    BackgroundTransparency = 0.5,
                     ZIndex = 7,
                     LayoutOrder = getNextLayoutOrder()
                 })
+                new("UICorner", {Parent = frame, CornerRadius = UDim.new(0, 5)})
+                new("UIStroke", {Parent = frame, Color = colors.border, Thickness = 1, Transparency = 0.65})
+                
+                new("UIPadding", {
+                    Parent = frame,
+                    PaddingTop = UDim.new(0, 10),
+                    PaddingBottom = UDim.new(0, 10),
+                    PaddingLeft = UDim.new(0, 12),
+                    PaddingRight = UDim.new(0, 12)
+                })
                 new("UIListLayout", {
                     Parent = frame,
-                    Padding = UDim.new(0, 3),
+                    Padding = UDim.new(0, 6),
                     SortOrder = Enum.SortOrder.LayoutOrder
                 })
-                local titleLabel = new("TextLabel", {
-                    Parent = frame,
-                    Name = "TitleLabel",
-                    LayoutOrder = 1,
-                    Text = title,
-                    Size = UDim2.new(1, 0, 0, 0),
-                    BackgroundTransparency = 1,
-                    Font = Enum.Font.GothamBold,
-                    TextSize = fontSize.small,
-                    TextColor3 = colors.text,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextYAlignment = Enum.TextYAlignment.Top,
-                    TextWrapped = true,
-                    RichText = useRich,
-                    Visible = title ~= "",
-                    ZIndex = 8
-                })
+                
+                local titleLabel
+                if title ~= "" then
+                    titleLabel = new("TextLabel", {
+                        Parent = frame,
+                        Name = "TitleLabel",
+                        LayoutOrder = 1,
+                        Text = title,
+                        Size = UDim2.new(1, 0, 0, 0),
+                        BackgroundTransparency = 1,
+                        Font = Enum.Font.GothamBold,
+                        TextSize = fontSize.normal,
+                        TextColor3 = colors.primary,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextYAlignment = Enum.TextYAlignment.Top,
+                        TextWrapped = true,
+                        RichText = useRich,
+                        ZIndex = 8
+                    })
+                end
+                
                 local contentLabel = new("TextLabel", {
                     Parent = frame,
                     Name = "ContentLabel",
@@ -2372,7 +2047,7 @@ function Library:Window(config)
                     Text = content,
                     Size = UDim2.new(1, 0, 0, 0),
                     BackgroundTransparency = 1,
-                    Font = Enum.Font.Gotham,
+                    Font = Enum.Font.GothamMedium,
                     TextSize = fontSize.small,
                     TextColor3 = colors.textDim,
                     TextXAlignment = Enum.TextXAlignment.Left,
@@ -2382,11 +2057,11 @@ function Library:Window(config)
                     ZIndex = 8
                 })
                 local function reflowParagraph()
-                    local totalHeight = 0
+                    local totalHeight = 20
                     if titleLabel and titleLabel.Parent and titleLabel.Visible then
                         local h = titleLabel.TextBounds.Y
                         titleLabel.Size = UDim2.new(1, 0, 0, h)
-                        totalHeight = totalHeight + h + 3
+                        totalHeight = totalHeight + h + 6
                     end
                     if contentLabel and contentLabel.Parent and contentLabel.Visible then
                         local h = contentLabel.TextBounds.Y
