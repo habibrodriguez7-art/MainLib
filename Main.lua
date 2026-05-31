@@ -1,4 +1,3 @@
---w
 local Library = {}
 Library.flags = {}
 Library.pages = {}
@@ -1489,14 +1488,15 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         BackgroundColor3 = colors.bg3,
         BackgroundTransparency = panelTransparency,
         BorderSizePixel = 0,
+        ClipsDescendants = true,
         ZIndex = 8
     })
     new("UICorner", {Parent = inputBg, CornerRadius = UDim.new(0, 4)})
     local initialValue = Library.ConfigSystem.Get(configPath, defaultValue)
     local inputBox = new("TextBox", {
         Parent = inputBg,
-        Size = UDim2.new(1, -10, 1, 0),
-        Position = UDim2.new(0, 5, 0, 0),
+        Size = UDim2.new(1, -16, 1, 0),
+        Position = UDim2.new(0, 8, 0, 0),
         BackgroundTransparency = 1,
         Text = initialValue ~= nil and tostring(initialValue) or "",
         PlaceholderText = "Enter Value",
@@ -1504,7 +1504,8 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         TextSize = fontSize.small,
         TextColor3 = colors.text,
         PlaceholderColor3 = colors.textDimmer,
-        TextXAlignment = Enum.TextXAlignment.Center,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ClipsDescendants = true,
         ClearTextOnFocus = false,
         ZIndex = 9
     })
