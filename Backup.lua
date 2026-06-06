@@ -1,3 +1,4 @@
+--w
 local Library = {}
 Library.flags = {}
 Library.pages = {}
@@ -1510,6 +1511,11 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         ZIndex = 9
     })
     local function resolveValue(text)
+        -- Don't convert long numbers (like Discord IDs) to number type
+        -- Lua numbers lose precision for IDs longer than 15 digits
+        if type(text) == "string" and #text > 15 and text:match("^%d+$") then
+            return text  -- Keep as string for long numeric IDs
+        end
         local num = tonumber(text)
         return num or text
     end
