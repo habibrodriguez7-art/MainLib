@@ -783,11 +783,12 @@ function Library:CreateCategory(parent, title, startOpen)
     startOpen = startOpen == true
     local categoryFrame = new("Frame", {
         Parent = parent,
-        Size = UDim2.new(1, 0, 0, sectionHeaderHeight),
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundColor3 = colors.bg2,
         BackgroundTransparency = sectionTransparency,
         BorderSizePixel = 0,
-        ClipsDescendants = true,
+        ClipsDescendants = false,
         ZIndex = 6
     })
     new("UICorner", {Parent = categoryFrame, CornerRadius = UDim.new(0, 4)})
@@ -831,6 +832,7 @@ function Library:CreateCategory(parent, title, startOpen)
     local contentContainer = new("Frame", {
         Parent = categoryFrame,
         Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
         LayoutOrder = 2,
         BackgroundTransparency = 1,
         Visible = startOpen,
@@ -842,34 +844,16 @@ function Library:CreateCategory(parent, title, startOpen)
         PaddingRight = UDim.new(0, 10),
         PaddingBottom = UDim.new(0, 6)
     })
-    local contentLayout = new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
+    new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
     local isOpen = startOpen
     arrow.Rotation = startOpen and 180 or 0
-
-    local function updateSize()
-        local h = sectionHeaderHeight
-        if isOpen then
-            local contentHeight = contentLayout.AbsoluteContentSize.Y
-            contentContainer.Size = UDim2.new(1, 0, 0, contentHeight + 6)
-            h = h + contentHeight + 6
-        end
-        categoryFrame.Size = UDim2.new(1, 0, 0, h)
-    end
-
-    self:AddConnection("categoryContentSize_" .. tostring(contentContainer), contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSize))
 
     header.MouseButton1Click:Connect(function()
         isOpen = not isOpen
         contentContainer.Visible = isOpen
         arrow.Rotation = isOpen and 180 or 0
-        updateSize()
-        
-        -- Beri sedikit jeda agar Roblox Engine selesai merender UI-nya 
-        -- sebelum memastikan ukurannya benar-benar pas.
-        task.defer(updateSize)
-        task.delay(0.05, updateSize)
     end)
-    task.defer(updateSize)
+
     return contentContainer
 end
 function Library:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
@@ -1202,11 +1186,10 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
         
         if #framesToDelete > 0 then
             task.spawn(function()
-                local deleteBatch = 40
-                for i, frame in ipairs(framesToDelete) do
-                    frame:Destroy()
-                    if i % deleteBatch == 0 then
-                        task.wait()
+                for i, f in ipairs(framesToDelete) do
+                    pcall(function() f:Destroy() end)
+                    if i % 8 == 0 then
+                        RunService.Heartbeat:Wait()
                     end
                 end
             end)
@@ -1250,11 +1233,11 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
         
         -- Menggunakan teknik "yield" saat merender ratusan item
         -- agar engine tidak freeze/lag saat membangun frame
-        local batchSize = 100
+        local batchSize = 20
         for i, opt in ipairs(list) do
             DropdownFunc:AddOption(opt)
             if i % batchSize == 0 then
-                task.wait()
+                RunService.Heartbeat:Wait()
             end
         end
         isBuilt = true
@@ -1384,11 +1367,11 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
         -- Kita masukkan pembuatan elemen ke dalam task.spawn agar background UI
         -- tidak menunggu operasi pemrosesan array besar selesai secara kaku.
         task.spawn(function()
-            local batchSize = 100
+            local batchSize = 20
             for i, opt in ipairs(newList) do
                 DropdownFunc:AddOption(opt)
                 if i % batchSize == 0 then
-                    task.wait()
+                    RunService.Heartbeat:Wait()
                 end
             end
             isBuilt = true
@@ -1434,7 +1417,16 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
         self:_showDropdown(dropdownContainer)
     end))
     
-    DropdownFunc:SetValues(items, savedValue)
+    DropdownFunc.Options = items
+    DropdownFunc.Value   = savedValue
+    if isMulti and type(DropdownFunc.Value) ~= "table" then
+        DropdownFunc.Value = {}
+    end
+    if not isMulti and DropdownFunc.Value ~= nil then
+        optionLabel.Text = tostring(DropdownFunc.Value)
+    elseif isMulti and type(DropdownFunc.Value) == "table" and #DropdownFunc.Value > 0 then
+        optionLabel.Text = table.concat(DropdownFunc.Value, ", ")
+    end
     
     if configPath then
         local cbType = isMulti and "multidropdown" or "dropdown"
@@ -2004,9 +1996,13 @@ function Library:Window(config)
                 local title   = formatRichText(paragraphConfig.Title or "")
                 local content = formatRichText(paragraphConfig.Content or "")
                 local useRich = paragraphConfig.RichText ~= false
+
+                local PADDING_V = 20
+                local GAP       = 6
+
                 local frame = new("Frame", {
                     Parent = self._container,
-                    Size = UDim2.new(1, 0, 0, 0),
+                    Size = UDim2.new(1, 0, 0, PADDING_V),
                     BackgroundColor3 = colors.bg2,
                     BackgroundTransparency = 0.5,
                     ZIndex = 7,
@@ -2014,20 +2010,19 @@ function Library:Window(config)
                 })
                 new("UICorner", {Parent = frame, CornerRadius = UDim.new(0, 5)})
                 new("UIStroke", {Parent = frame, Color = colors.border, Thickness = 1, Transparency = 0.65})
-                
                 new("UIPadding", {
                     Parent = frame,
-                    PaddingTop = UDim.new(0, 10),
+                    PaddingTop    = UDim.new(0, 10),
                     PaddingBottom = UDim.new(0, 10),
-                    PaddingLeft = UDim.new(0, 12),
-                    PaddingRight = UDim.new(0, 12)
+                    PaddingLeft   = UDim.new(0, 12),
+                    PaddingRight  = UDim.new(0, 12)
                 })
                 new("UIListLayout", {
                     Parent = frame,
-                    Padding = UDim.new(0, 6),
+                    Padding = UDim.new(0, GAP),
                     SortOrder = Enum.SortOrder.LayoutOrder
                 })
-                
+
                 local titleLabel
                 if title ~= "" then
                     titleLabel = new("TextLabel", {
@@ -2035,7 +2030,7 @@ function Library:Window(config)
                         Name = "TitleLabel",
                         LayoutOrder = 1,
                         Text = title,
-                        Size = UDim2.new(1, 0, 0, 0),
+                        Size = UDim2.new(1, 0, 0, 14),
                         BackgroundTransparency = 1,
                         Font = Enum.Font.GothamBold,
                         TextSize = fontSize.normal,
@@ -2047,13 +2042,13 @@ function Library:Window(config)
                         ZIndex = 8
                     })
                 end
-                
+
                 local contentLabel = new("TextLabel", {
                     Parent = frame,
                     Name = "ContentLabel",
                     LayoutOrder = 2,
                     Text = content,
-                    Size = UDim2.new(1, 0, 0, 0),
+                    Size = UDim2.new(1, 0, 0, 12),
                     BackgroundTransparency = 1,
                     Font = Enum.Font.GothamMedium,
                     TextSize = fontSize.small,
@@ -2064,42 +2059,51 @@ function Library:Window(config)
                     RichText = useRich,
                     ZIndex = 8
                 })
-                local function reflowParagraph()
-                    local totalHeight = 20
-                    if titleLabel and titleLabel.Parent and titleLabel.Visible then
-                        local h = titleLabel.TextBounds.Y
-                        titleLabel.Size = UDim2.new(1, 0, 0, h)
-                        totalHeight = totalHeight + h + 6
-                    end
-                    if contentLabel and contentLabel.Parent and contentLabel.Visible then
-                        local h = contentLabel.TextBounds.Y
-                        contentLabel.Size = UDim2.new(1, 0, 0, h)
-                        totalHeight = totalHeight + h
-                    end
-                    if frame and frame.Parent then
-                        frame.Size = UDim2.new(1, 0, 0, totalHeight)
-                    end
+
+                local reflowPending = false
+                local function reflow()
+                    if reflowPending then return end
+                    reflowPending = true
+                    task.defer(function()
+                        reflowPending = false
+                        if not frame or not frame.Parent then return end
+                        local total = PADDING_V
+                        if titleLabel and titleLabel.Parent then
+                            local h = math.max(titleLabel.TextBounds.Y, 14)
+                            titleLabel.Size = UDim2.new(1, 0, 0, h)
+                            total = total + h
+                        end
+                        if contentLabel and contentLabel.Parent then
+                            local h = math.max(contentLabel.TextBounds.Y, 12)
+                            contentLabel.Size = UDim2.new(1, 0, 0, h)
+                            total = total + h
+                        end
+                        if titleLabel and titleLabel.Parent and contentLabel and contentLabel.Parent then
+                            total = total + GAP
+                        end
+                        frame.Size = UDim2.new(1, 0, 0, total)
+                    end)
                 end
-                frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflowParagraph)
-                if titleLabel then titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflowParagraph) end
-                if contentLabel then contentLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflowParagraph) end
-                task.defer(reflowParagraph)
-                local paragraphObj = {
+
+                if titleLabel then
+                    titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
+                end
+                contentLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
+                task.defer(reflow)
+
+                return {
                     _frame        = frame,
                     _titleLabel   = titleLabel,
                     _contentLabel = contentLabel,
                     SetTitle = function(self, newTitle)
                         if self._titleLabel then
-                            newTitle = formatRichText(newTitle or "")
-                            self._titleLabel.Text = newTitle
-                            self._titleLabel.Visible = newTitle ~= ""
-                            reflowParagraph()
+                            self._titleLabel.Text = formatRichText(newTitle or "")
+                            self._titleLabel.Visible = (newTitle or "") ~= ""
                         end
                     end,
                     SetContent = function(self, newContent)
                         if self._contentLabel then
                             self._contentLabel.Text = formatRichText(newContent or "")
-                            reflowParagraph()
                         end
                     end,
                     GetTitle = function(self)
@@ -2109,7 +2113,6 @@ function Library:Window(config)
                         return self._contentLabel and self._contentLabel.Text or ""
                     end
                 }
-                return paragraphObj
             end
             table.insert(self._sections, SectionObject)
             return SectionObject
