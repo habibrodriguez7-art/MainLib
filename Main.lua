@@ -520,8 +520,8 @@ function Library:CreateWindow(config)
     end))
     self._navContainer = new("ScrollingFrame", {
         Parent = self._sidebar,
-        Size = UDim2.new(1, -10, 1, -43),
-        Position = UDim2.new(0, 5, 0, 38),
+        Size = UDim2.new(1, -10, 1, -39),
+        Position = UDim2.new(0, 5, 0, 34),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 0,
