@@ -254,11 +254,31 @@ local function RegisterCallback(configPath, callback, componentType, defaultValu
 end
 
 local function ExecuteConfigCallbacks()
+    -- Phase 1: restore every component's saved value + visual state WITHOUT
+    -- running any action callbacks. This guarantees that dropdown/input filter
+    -- values are already in place before any toggle action runs.
     for _, entry in pairs(CallbackRegistry) do
-        local value = Library.ConfigSystem.Get(entry.path, entry.default)
-        if entry.updateVisual then pcall(entry.updateVisual, value) end
-        if entry.callback     then pcall(entry.callback,     value) end
+        if entry.updateVisual then
+            local value = Library.ConfigSystem.Get(entry.path, entry.default)
+            pcall(entry.updateVisual, value)
+        end
     end
+    -- Phase 2: run action callbacks. Non-toggle components (dropdown, input,
+    -- etc.) run first so their filters/selections are fully applied, then
+    -- toggles run last -- a toggle like "Auto Favorite" therefore starts only
+    -- after its dropdown filter has been restored, fixing the load-order bug
+    -- where the toggle ran unfiltered on execute.
+    local function runCallbacks(wantToggle)
+        for _, entry in pairs(CallbackRegistry) do
+            local isToggle = entry.type == "toggle"
+            if entry.callback and isToggle == wantToggle then
+                local value = Library.ConfigSystem.Get(entry.path, entry.default)
+                pcall(entry.callback, value)
+            end
+        end
+    end
+    runCallbacks(false)
+    runCallbacks(true)
 end
 _G.AutoSaveEnabled = true
 function _G.GetConfigValue(key, default)
@@ -714,20 +734,13 @@ function Library:CreateWindow(config)
         end
     end))
     local dragging, dragStart, startPos = false, nil, nil
-    self:AddConnection("headerDragStart", scriptHeader.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            bringToFront()
-            dragging, dragStart, startPos = true, input.Position, self._win.Position
-        end
-    end))
     local resizing = false
     local resizeStartPos, resizeStartSize = nil, nil
-    self:AddConnection("resizeDragStart", resizeHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            resizing, resizeStartPos, resizeStartSize = true, input.Position, self._win.Size
-        end
-    end))
-    self:AddConnection("inputChanged", UserInputService.InputChanged:Connect(function(input)
+    -- The move handler only needs to run while actively dragging/resizing, so we
+    -- connect UserInputService.InputChanged on drag start and disconnect it on
+    -- release. This avoids running any Lua on every mouse move / touch when idle.
+    local moveConn = nil
+    local function onMove(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             if dragging and startPos then
                 local delta = input.Position - dragStart
@@ -740,11 +753,37 @@ function Library:CreateWindow(config)
                 self._win.Size = UDim2.new(0, newWidth, 0, newHeight)
             end
         end
+    end
+    local function ensureMoveConn()
+        if not moveConn then
+            moveConn = UserInputService.InputChanged:Connect(onMove)
+            self:AddConnection("inputChanged", moveConn)
+        end
+    end
+    local function releaseMoveConn()
+        if moveConn and not dragging and not resizing then
+            moveConn:Disconnect()
+            moveConn = nil
+        end
+    end
+    self:AddConnection("headerDragStart", scriptHeader.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            bringToFront()
+            dragging, dragStart, startPos = true, input.Position, self._win.Position
+            ensureMoveConn()
+        end
+    end))
+    self:AddConnection("resizeDragStart", resizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            resizing, resizeStartPos, resizeStartSize = true, input.Position, self._win.Size
+            ensureMoveConn()
+        end
     end))
     self:AddConnection("inputEnded", UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
             resizing = false
+            releaseMoveConn()
         end
     end))
     self:_createSearchBar()
@@ -876,11 +915,12 @@ function Library:_createSearchBar()
         Visible = false,
         ZIndex = 62
     })
-    local function clearRows()
-        for _, child in ipairs(resultsList:GetChildren()) do
-            if child:IsA("TextButton") then child:Destroy() end
-        end
-    end
+    -- Pool of result rows: reused across searches instead of being destroyed and
+    -- rebuilt on every keystroke. Unused rows are just hidden (UIListLayout skips
+    -- invisible siblings), which avoids instance churn / GC pressure on low-end
+    -- and mobile devices.
+    local rowPool = {}
+    local searchThread = nil
     local function highlightFeature(frame)
         if not frame or not frame.Parent then return end
         local old = frame:FindFirstChild("__SearchHL")
@@ -925,11 +965,70 @@ function Library:_createSearchBar()
             highlightFeature(frame)
         end)
     end
+    local function buildRow()
+        local row = new("TextButton", {
+            Parent = resultsList,
+            Size = UDim2.new(1, 0, 0, ROW_H),
+            BackgroundColor3 = colors.bg3,
+            BackgroundTransparency = sectionTransparency,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+            Visible = false,
+            ZIndex = 62
+        })
+        new("UICorner", {Parent = row, CornerRadius = UDim.new(0, 4)})
+        local accent = new("Frame", {
+            Parent = row,
+            Size = UDim2.new(0, 3, 1, -8),
+            Position = UDim2.new(0, 0, 0, 4),
+            BackgroundColor3 = colors.primary,
+            BorderSizePixel = 0,
+            ZIndex = 63
+        })
+        new("UICorner", {Parent = accent, CornerRadius = UDim.new(1, 0)})
+        local nameLabel = new("TextLabel", {
+            Parent = row,
+            Text = "",
+            Size = UDim2.new(1, -14, 0, 15),
+            Position = UDim2.new(0, 9, 0, 4),
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamBold,
+            TextSize = fontSize.small,
+            TextColor3 = colors.text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 63
+        })
+        local metaLabel = new("TextLabel", {
+            Parent = row,
+            Text = "",
+            Size = UDim2.new(1, -14, 0, 11),
+            Position = UDim2.new(0, 9, 0, 18),
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 9,
+            TextColor3 = colors.textDimmer,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 63
+        })
+        local data = {button = row, nameLabel = nameLabel, metaLabel = metaLabel, entry = nil}
+        row.MouseEnter:Connect(function() row.BackgroundColor3 = colors.bg4 end)
+        row.MouseLeave:Connect(function() row.BackgroundColor3 = colors.bg3 end)
+        row.MouseButton1Click:Connect(function()
+            if data.entry then goToFeature(data.entry) end
+        end)
+        return data
+    end
     local function doSearch(query)
         query = tostring(query or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
         clearBtn.Visible = (query ~= "")
-        clearRows()
         if query == "" then
+            for _, r in ipairs(rowPool) do
+                r.button.Visible = false
+                r.entry = nil
+            end
             resultsPanel.Visible = false
             emptyLabel.Visible = false
             return
@@ -939,62 +1038,26 @@ function Library:_createSearchBar()
         for _, entry in ipairs(index) do
             if entry.frame and entry.frame.Parent and entry.lname and entry.lname:find(query, 1, true) then
                 order = order + 1
-                local row = new("TextButton", {
-                    Parent = resultsList,
-                    Size = UDim2.new(1, 0, 0, ROW_H),
-                    BackgroundColor3 = colors.bg3,
-                    BackgroundTransparency = sectionTransparency,
-                    BorderSizePixel = 0,
-                    Text = "",
-                    AutoButtonColor = false,
-                    LayoutOrder = order,
-                    ZIndex = 62
-                })
-                new("UICorner", {Parent = row, CornerRadius = UDim.new(0, 4)})
-                local accent = new("Frame", {
-                    Parent = row,
-                    Size = UDim2.new(0, 3, 1, -8),
-                    Position = UDim2.new(0, 0, 0, 4),
-                    BackgroundColor3 = colors.primary,
-                    BorderSizePixel = 0,
-                    ZIndex = 63
-                })
-                new("UICorner", {Parent = accent, CornerRadius = UDim.new(1, 0)})
-                new("TextLabel", {
-                    Parent = row,
-                    Text = entry.name,
-                    Size = UDim2.new(1, -14, 0, 15),
-                    Position = UDim2.new(0, 9, 0, 4),
-                    BackgroundTransparency = 1,
-                    Font = Enum.Font.GothamBold,
-                    TextSize = fontSize.small,
-                    TextColor3 = colors.text,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    ZIndex = 63
-                })
+                local r = rowPool[order]
+                if not r then
+                    r = buildRow()
+                    rowPool[order] = r
+                end
+                r.entry = entry
+                r.nameLabel.Text = entry.name
                 local metaText = entry.pageName or ""
                 if entry.sectionTitle and entry.sectionTitle ~= "" then
                     metaText = (metaText ~= "" and (metaText .. " • ") or "") .. entry.sectionTitle
                 end
-                new("TextLabel", {
-                    Parent = row,
-                    Text = metaText,
-                    Size = UDim2.new(1, -14, 0, 11),
-                    Position = UDim2.new(0, 9, 0, 18),
-                    BackgroundTransparency = 1,
-                    Font = Enum.Font.GothamMedium,
-                    TextSize = 9,
-                    TextColor3 = colors.textDimmer,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    ZIndex = 63
-                })
-                row.MouseEnter:Connect(function() row.BackgroundColor3 = colors.bg4 end)
-                row.MouseLeave:Connect(function() row.BackgroundColor3 = colors.bg3 end)
-                local capturedEntry = entry
-                row.MouseButton1Click:Connect(function() goToFeature(capturedEntry) end)
+                r.metaLabel.Text = metaText
+                r.button.LayoutOrder = order
+                r.button.BackgroundColor3 = colors.bg3
+                r.button.Visible = true
             end
+        end
+        for i = order + 1, #rowPool do
+            rowPool[i].button.Visible = false
+            rowPool[i].entry = nil
         end
         emptyLabel.Visible = (order == 0)
         local panelH
@@ -1007,8 +1070,23 @@ function Library:_createSearchBar()
         resultsPanel.Size = UDim2.new(0, searchW, 0, panelH)
         resultsPanel.Visible = true
     end
+    -- Debounce: rebuild results only after typing pauses briefly, so holding/
+    -- spamming keys on a low-end device doesn't rebuild the list every keystroke.
     self:AddConnection("searchTextChanged", searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        doSearch(searchBox.Text)
+        local text = searchBox.Text
+        if searchThread then
+            pcall(function() task.cancel(searchThread) end)
+            searchThread = nil
+        end
+        if text == "" then
+            doSearch("")
+            return
+        end
+        clearBtn.Visible = true
+        searchThread = task.delay(0.1, function()
+            searchThread = nil
+            doSearch(text)
+        end)
     end))
     self:AddConnection("searchFocused", searchBox.Focused:Connect(function()
         searchStroke.Color = colors.primary
