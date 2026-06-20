@@ -1,3 +1,4 @@
+--w
 local Library = {}
 Library.flags = {}
 Library.pages = {}
@@ -1635,6 +1636,7 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
     local isOpen = false
     local needsRefresh = false
     local poolBuilt = false
+    local optionsNormalized = false
 
     local function rebuildSelectedSet()
         table.clear(selectedSet)
@@ -1664,7 +1666,33 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
         end
     end
 
+    local function applyFilter(query)
+        if not query or query == "" then
+            for i = 1, #allOptions do
+                filteredOptions[i] = allOptions[i]
+            end
+            for i = #allOptions + 1, #filteredOptions do
+                filteredOptions[i] = nil
+            end
+            return
+        end
+        table.clear(filteredOptions)
+        for _, opt in ipairs(allOptions) do
+            if string.find(opt.lower, query, 1, true) then
+                filteredOptions[#filteredOptions + 1] = opt
+            end
+        end
+    end
+
+    local function ensureOptionsNormalized()
+        if optionsNormalized then return end
+        optionsNormalized = true
+        normalizeListInto(items, allOptions)
+        applyFilter("")
+    end
+
     local function updateClosedLabel()
+        ensureOptionsNormalized()
         if isMulti then
             local n = DropdownFunc.Value and #DropdownFunc.Value or 0
             if n == 0 then
@@ -1694,24 +1722,6 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
                     end
                 end
                 optionLabel.Text = foundLabel or tostring(v)
-            end
-        end
-    end
-
-    local function applyFilter(query)
-        if not query or query == "" then
-            for i = 1, #allOptions do
-                filteredOptions[i] = allOptions[i]
-            end
-            for i = #allOptions + 1, #filteredOptions do
-                filteredOptions[i] = nil
-            end
-            return
-        end
-        table.clear(filteredOptions)
-        for _, opt in ipairs(allOptions) do
-            if string.find(opt.lower, query, 1, true) then
-                filteredOptions[#filteredOptions + 1] = opt
             end
         end
     end
@@ -1769,6 +1779,7 @@ end
 local function ensurePoolBuilt()
     if poolBuilt then return end
     poolBuilt = true
+    ensureOptionsNormalized()
 
     for i = 1, POOL_SIZE do
         local row = new("Frame", {
@@ -1909,6 +1920,8 @@ function DropdownFunc:Clear()
 
     function DropdownFunc:SetValues(newList, selecting)
         newList = newList or {}
+        items = newList
+        optionsNormalized = true
         normalizeListInto(newList, allOptions)
         DropdownFunc.Options = newList
         if isMulti then
@@ -1939,6 +1952,8 @@ function DropdownFunc:Clear()
 
     function DropdownFunc:Refresh(newList)
         local prevValue = DropdownFunc.Value
+        items = newList
+        optionsNormalized = true
         normalizeListInto(newList, allOptions)
         DropdownFunc.Options = newList
         if isMulti then
@@ -2016,8 +2031,6 @@ function DropdownFunc:Clear()
         end
     end))
 
-    normalizeListInto(items, allOptions)
-    applyFilter("")
     rebuildSelectedSet()
     updateClosedLabel()
 
