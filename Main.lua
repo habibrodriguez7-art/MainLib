@@ -1,4 +1,3 @@
---w
 local Library = {}
 Library.flags = {}
 Library.pages = {}
@@ -420,7 +419,6 @@ function Library:CreateWindow(config)
         BorderSizePixel = 0,
         ZIndex = 6
     })
-    new("UICorner", {Parent = separator, CornerRadius = UDim.new(0, 2)})
     new("TextLabel", {
         Parent = scriptHeader,
         Text = subtitle,
@@ -506,7 +504,6 @@ function Library:CreateWindow(config)
         BorderSizePixel = 0,
         ZIndex = 8
     })
-    new("UICorner", {Parent = discordSep, CornerRadius = UDim.new(1, 0)})
     new("UIGradient", {
         Parent = discordSep,
         Rotation = 90,
@@ -559,7 +556,6 @@ function Library:CreateWindow(config)
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y,
-        ClipsDescendants = true,
         ZIndex = 5
     })
     new("UIListLayout", {Parent = self._navContainer, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder})
@@ -747,24 +743,41 @@ function Library:CreateWindow(config)
     local dragging, dragStart, startPos = false, nil, nil
     local resizing = false
     local resizeStartPos, resizeStartSize = nil, nil
-    -- The move handler only needs to run while actively dragging/resizing, so we
-    -- connect UserInputService.InputChanged on drag start and disconnect it on
-    -- release. This avoids running any Lua on every mouse move / touch when idle.
-    local moveConn = nil
+    -- Drag/resize EVENT-DRIVEN murni: Position/Size ditulis HANYA saat input
+    -- bener-baker berubah (InputChanged), bukan tiap render frame. Tidak ada
+    -- RenderStepped, lerp, atau loop per-frame apa pun -> yang paling ringan
+    -- secara engine. Setiap perubahan Position memicu engine re-layout UI tree
+    -- descendant, jadi minimalkan jumlah tulis = FPS paling stabil.
+    -- (Note: transparansi dipertahankan permanen -- terbukti BUKAN penyebab
+    -- FPS drop; penyebabnya adalah render invalidation per-property-change.)
+    local win = self._win
+    -- Threshold delta: di Delta mobile, InputChanged sering fire dengan posisi
+    -- sub-pixel yang nyaris sama (noise touch). Tiap write Position/Size = engine
+    -- re-layout seluruh descendant UI -> mahal. Skip write kalau gerakan <1px
+    -- dari posisi terakhir yang ditulis -> hemat refresh sia-sia, nol perubahan
+    -- visual. lastX/lastY cache posisi terakhir biar gak baca win.Position tiap event.
+    local lastX, lastY = nil, nil
     local function onMove(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             if dragging and startPos then
-                local delta = input.Position - dragStart
-                self._win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            end
-            if resizing and resizeStartPos then
-                local delta = input.Position - resizeStartPos
-                local newWidth = math.clamp(resizeStartSize.X.Offset + delta.X, minWindowSize.X, maxWindowSize.X)
-                local newHeight = math.clamp(resizeStartSize.Y.Offset + delta.Y, minWindowSize.Y, maxWindowSize.Y)
-                self._win.Size = UDim2.new(0, newWidth, 0, newHeight)
+                local nx = startPos.X.Offset + (input.Position - dragStart).X
+                local ny = startPos.Y.Offset + (input.Position - dragStart).Y
+                if lastX == nil or nx-lastX > 0.5 or nx-lastX < -0.5 or ny-lastY > 0.5 or ny-lastY < -0.5 then
+                    lastX, lastY = nx, ny
+                    win.Position = UDim2.new(startPos.X.Scale, nx, startPos.Y.Scale, ny)
+                end
+            elseif resizing and resizeStartPos then
+                local d = input.Position - resizeStartPos
+                local nw = math.clamp(resizeStartSize.X.Offset + d.X, minWindowSize.X, maxWindowSize.X)
+                local nh = math.clamp(resizeStartSize.Y.Offset + d.Y, minWindowSize.Y, maxWindowSize.Y)
+                if lastX == nil or nw ~= lastX or nh ~= lastY then
+                    lastX, lastY = nw, nh
+                    win.Size = UDim2.new(0, nw, 0, nh)
+                end
             end
         end
     end
+    local moveConn = nil
     local function ensureMoveConn()
         if not moveConn then
             moveConn = UserInputService.InputChanged:Connect(onMove)
@@ -781,12 +794,14 @@ function Library:CreateWindow(config)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             bringToFront()
             dragging, dragStart, startPos = true, input.Position, self._win.Position
+            lastX, lastY = nil, nil -- reset threshold cache per sesi drag
             ensureMoveConn()
         end
     end))
     self:AddConnection("resizeDragStart", resizeHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             resizing, resizeStartPos, resizeStartSize = true, input.Position, self._win.Size
+            lastX, lastY = nil, nil -- reset threshold cache per sesi resize
             ensureMoveConn()
         end
     end))
@@ -817,7 +832,6 @@ function Library:_createSearchBar()
         BackgroundColor3 = colors.bg2,
         BackgroundTransparency = sectionTransparency,
         BorderSizePixel = 0,
-        ClipsDescendants = true,
         ZIndex = 7,
         Name = "SearchBar"
     })
@@ -850,7 +864,6 @@ function Library:_createSearchBar()
         PlaceholderColor3 = colors.textDimmer,
         TextXAlignment = Enum.TextXAlignment.Left,
         ClearTextOnFocus = false,
-        ClipsDescendants = true,
         ZIndex = 9
     })
     local clearBtn = new("TextButton", {
@@ -875,7 +888,6 @@ function Library:_createSearchBar()
             BorderSizePixel = 0,
             ZIndex = 10
         })
-        new("UICorner", {Parent = line, CornerRadius = UDim.new(1, 0)})
         clearLines[#clearLines + 1] = line
     end
     addClearLine(45)
@@ -894,7 +906,6 @@ function Library:_createSearchBar()
         BackgroundTransparency = panelTransparency,
         BorderSizePixel = 0,
         Visible = false,
-        ClipsDescendants = true,
         ZIndex = 60,
         Name = "SearchResults"
     })
@@ -906,12 +917,10 @@ function Library:_createSearchBar()
         Position = UDim2.new(0, 3, 0, 3),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = colors.primary,
+        ScrollBarThickness = 0,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y,
-        ClipsDescendants = true,
         ZIndex = 61
     })
     new("UIListLayout", {Parent = resultsList, Padding = UDim.new(0, ROW_GAP), SortOrder = Enum.SortOrder.LayoutOrder})
@@ -1141,7 +1150,6 @@ function Library:CreatePage(name, title, imageId, order)
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y,
-        ClipsDescendants = true,
         ZIndex = 5
     })
     new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
@@ -1433,7 +1441,7 @@ function Library:_initDropdownSystem()
         Parent = self._dropdownOverlay,
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundTransparency = 0.999,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Text = "",
         ZIndex = 151
@@ -1444,7 +1452,7 @@ function Library:_initDropdownSystem()
         Size = UDim2.new(0, 160, 1, -16),
         Position = UDim2.new(1, 172, 0.5, 0),
         BackgroundColor3 = colors.bg2,
-        BackgroundTransparency = sectionTransparency,
+        BackgroundTransparency = 0.09,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         ZIndex = 152,
@@ -1457,21 +1465,10 @@ function Library:_initDropdownSystem()
         Thickness = 1,
         Transparency = 0.45
     })
-    local panelInner = new("Frame", {
-        Parent = self._dropdownPanel,
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Size = UDim2.new(1, -2, 1, -2),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        BackgroundColor3 = colors.bg2,
-        BackgroundTransparency = sectionTransparency,
-        BorderSizePixel = 0,
-        ZIndex = 153,
-        Name = "PanelInner"
-    })
-    new("UICorner", {Parent = panelInner, CornerRadius = UDim.new(0, 5)})
     self._dropdownFolder = new("Frame", {
-        Parent = panelInner,
-        Size = UDim2.new(1, 0, 1, 0),
+        Parent = self._dropdownPanel,
+        Size = UDim2.new(1, -2, 1, 0),
+        Position = UDim2.new(0, 1, 0, 1),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ClipsDescendants = true,
@@ -1611,177 +1608,183 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
     new("UIStroke", {Parent = searchBox, Color = colors.border, Thickness = 1, Transparency = 0.5})
     new("UIPadding", {Parent = searchBox, PaddingLeft = UDim.new(0, 8)})
     
+    local ROW_H, ROW_GAP = 26, 3
+    local ROW_STRIDE = ROW_H + ROW_GAP
+    local POOL_SIZE = 18
+
     local scrollSelect = new("ScrollingFrame", {
         Parent = dropdownContainer,
         Size = UDim2.new(1, -8, 1, -36),
         Position = UDim2.new(0, 4, 0, 32),
-        ScrollBarImageTransparency = 0.35,
-        ScrollBarImageColor3 = colors.primary,
         BorderSizePixel = 0,
         BackgroundTransparency = 1,
-        ScrollBarThickness = 3,
+        ScrollBarThickness = 0,
         CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ZIndex = 154
     })
-    
-    local listLayout = new("UIListLayout", {
-        Parent = scrollSelect,
-        Padding = UDim.new(0, 3),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    })
-    -- Canvas height dihitung native oleh AutomaticCanvasSize (lihat prop di
-    -- scrollSelect). Dulu ada listener manual di sini yang set CanvasSize tiap
-    -- AbsoluteContentSize berubah; itu duplikat pekerjaan dan fires ribuan kali
-    -- saat opsi dirender/disaring, jadi dihapus demi performa.
 
     local savedValue = configPath and Library.ConfigSystem.Get(configPath, defaultValue) or defaultValue
     if isMulti and type(savedValue) ~= "table" then savedValue = {} end
-    
+
     local DropdownFunc = { Value = savedValue, Options = items }
-    local optionFrameCache = {}
-    local optionConns = {}
+    local allOptions = {}
+    local filteredOptions = {}
+    local selectedSet = {}
+    local rowPool = {}
     local searchThread = nil
-    local isBuilt = false
-    local lastSelectedFrame = nil -- frame opsi terakhir yang dipilih (single-select)
+    local isOpen = false
+    local needsRefresh = false
+    local poolBuilt = false
 
-    -- Harga termurah untuk memilih/membatalkan satu opsi: set semua properti
-    -- visualnya sesuai state selected. Dipakai oleh refreshSelectionVisuals
-    -- maupun update-satu-opsi pada klik, supaya konsisten & tanpa duplikat.
-    local function paintOption(opt, selected)
-        if selected then
-            opt.ChooseFrame.Size = UDim2.new(0, 3, 0, 16)
-            opt.ChooseFrame.UIStroke.Transparency = 0.35
-            opt.BackgroundColor3 = colors.bg3
-            opt.BackgroundTransparency = panelTransparency
-            opt.OptionText.TextColor3 = colors.text
-        else
-            opt.ChooseFrame.Size = UDim2.new(0, 0, 0, 0)
-            opt.ChooseFrame.UIStroke.Transparency = 1
-            opt.BackgroundColor3 = colors.bg2
-            opt.BackgroundTransparency = 0.5
-            opt.OptionText.TextColor3 = colors.textDim
-        end
-    end
-
-    local function disconnectOptionConns()
-        for i = #optionConns, 1, -1 do
-            local c = optionConns[i]
-            optionConns[i] = nil
-            pcall(function() c:Disconnect() end)
-        end
-    end
-    
-    local function clearOptionFrames()
-        disconnectOptionConns()
-        
-        -- Batch penghapusan Frame lama agar tidak lag saat refresh
-        local framesToDelete = {}
-        for _, child in scrollSelect:GetChildren() do
-            if child:IsA("Frame") then 
-                table.insert(framesToDelete, child)
-            end
-        end
-        
-        if #framesToDelete > 0 then
-            task.spawn(function()
-                for i, f in ipairs(framesToDelete) do
-                    pcall(function() f:Destroy() end)
-                    if i % 8 == 0 then
-                        RunService.Heartbeat:Wait()
-                    end
-                end
-            end)
-        end
-        
-        table.clear(optionFrameCache)
-        isBuilt = false
-    end
-    
-    local function refreshSelectionVisuals()
-        -- Bangun lookup set satu kali (O(n)) lalu cek keanggotaan O(1), bukan
-        -- table.find O(n) di dalam loop O(n) yang bikin O(n²) per pemilihan.
-        local selectedSet
+    local function rebuildSelectedSet()
+        table.clear(selectedSet)
         if isMulti then
-            selectedSet = {}
             for _, v in ipairs(DropdownFunc.Value) do
                 selectedSet[v] = true
             end
+        elseif DropdownFunc.Value ~= nil then
+            selectedSet[DropdownFunc.Value] = true
         end
-        local currentValue = DropdownFunc.Value
-        local texts = {}
-        lastSelectedFrame = nil
-        for _, entry in ipairs(optionFrameCache) do
-            local opt = entry.frame
-            if opt and opt.Parent then
-                local v = opt:GetAttribute("RealValue")
-                local selected = isMulti and (selectedSet[v] == true) or (not isMulti and currentValue == v)
-                paintOption(opt, selected)
-                if selected then
-                    if not isMulti then lastSelectedFrame = opt end
-                    table.insert(texts, opt.OptionText.Text)
+    end
+
+    local function normalizeListInto(srcList, dstList)
+        table.clear(dstList)
+        for _, opt in ipairs(srcList) do
+            local label, value
+            if typeof(opt) == "table" and opt.Label and opt.Value ~= nil then
+                label, value = tostring(opt.Label), opt.Value
+            else
+                label, value = tostring(opt), opt
+            end
+            dstList[#dstList + 1] = {
+                label = label,
+                value = value,
+                lower = string.lower(label),
+            }
+        end
+    end
+
+    local function updateClosedLabel()
+        if isMulti then
+            local n = DropdownFunc.Value and #DropdownFunc.Value or 0
+            if n == 0 then
+                optionLabel.Text = defaultText
+            else
+                local labels = {}
+                for _, v in ipairs(DropdownFunc.Value) do
+                    for _, opt in ipairs(allOptions) do
+                        if opt.value == v then
+                            labels[#labels + 1] = opt.label
+                            break
+                        end
+                    end
                 end
+                optionLabel.Text = (#labels == 0) and defaultText or table.concat(labels, ", ")
             end
-        end
-        optionLabel.Text = (#texts == 0) and defaultText or table.concat(texts, ", ")
-    end
-    
-    local function ensureBuilt()
-        if isBuilt then return end
-        clearOptionFrames()
-        local list = DropdownFunc.Options or {}
-        
-        -- Menggunakan teknik "yield" saat merender ratusan item
-        -- agar engine tidak freeze/lag saat membangun frame
-        local batchSize = 20
-        for i, opt in ipairs(list) do
-            DropdownFunc:AddOption(opt)
-            if i % batchSize == 0 then
-                RunService.Heartbeat:Wait()
-            end
-        end
-        isBuilt = true
-        refreshSelectionVisuals()
-    end
-    
-    function DropdownFunc:Clear()
-        clearOptionFrames()
-        DropdownFunc.Value = isMulti and {} or nil
-        DropdownFunc.Options = {}
-        optionLabel.Text = defaultText
-    end
-    
-    function DropdownFunc:AddOption(option)
-        local label, value
-        if typeof(option) == "table" and option.Label and option.Value ~= nil then
-            label, value = tostring(option.Label), option.Value
         else
-            label, value = tostring(option), option
+            local v = DropdownFunc.Value
+            if v == nil then
+                optionLabel.Text = defaultText
+            else
+                local foundLabel = nil
+                for _, opt in ipairs(allOptions) do
+                    if opt.value == v then
+                        foundLabel = opt.label
+                        break
+                    end
+                end
+                optionLabel.Text = foundLabel or tostring(v)
+            end
         end
-        
-        local optionFrame = new("Frame", {
+    end
+
+    local function applyFilter(query)
+        if not query or query == "" then
+            for i = 1, #allOptions do
+                filteredOptions[i] = allOptions[i]
+            end
+            for i = #allOptions + 1, #filteredOptions do
+                filteredOptions[i] = nil
+            end
+            return
+        end
+        table.clear(filteredOptions)
+        for _, opt in ipairs(allOptions) do
+            if string.find(opt.lower, query, 1, true) then
+                filteredOptions[#filteredOptions + 1] = opt
+            end
+        end
+    end
+
+    local function paintRow(row, opt)
+        local selected = selectedSet[opt.value] == true
+        if selected then
+            row.ChooseFrame.Size = UDim2.new(0, 3, 0, 16)
+            row.BackgroundColor3 = colors.bg3
+            row.BackgroundTransparency = panelTransparency
+            row.OptionText.TextColor3 = colors.text
+        else
+            row.ChooseFrame.Size = UDim2.new(0, 0, 0, 0)
+            row.BackgroundColor3 = colors.bg2
+            row.BackgroundTransparency = 0.5
+            row.OptionText.TextColor3 = colors.textDim
+        end
+        row.OptionText.Text = opt.label
+    end
+
+    local function refreshVisible()
+        if not poolBuilt then return end
+        local list = filteredOptions
+        local total = #list
+        local viewH = scrollSelect.AbsoluteSize.Y
+        if viewH <= 0 then needsRefresh = true return end
+        needsRefresh = false
+
+        local canvasH = total * ROW_STRIDE
+        if total > 0 then canvasH = canvasH - ROW_GAP end
+        scrollSelect.CanvasSize = UDim2.new(0, 0, 0, canvasH)
+
+        local scrollY = scrollSelect.CanvasPosition.Y
+        local firstVisible = math.floor(scrollY / ROW_STRIDE) + 1
+        if firstVisible < 1 then firstVisible = 1 end
+        local maxVisible = math.floor(viewH / ROW_STRIDE) + 2
+        local lastVisible = math.min(total, firstVisible + maxVisible - 1)
+
+    for i = 1, #rowPool do
+        local row = rowPool[i]
+        local optIndex = firstVisible + i - 1
+        if optIndex <= lastVisible then
+            local opt = list[optIndex]
+            row.Position = UDim2.new(0, 0, 0, (optIndex - 1) * ROW_STRIDE)
+            paintRow(row, opt)
+            row:SetAttribute("VirtualIndex", optIndex)
+            row.Visible = true
+        else
+            row.Visible = false
+            row:SetAttribute("VirtualIndex", nil)
+        end
+    end
+end
+
+local function ensurePoolBuilt()
+    if poolBuilt then return end
+    poolBuilt = true
+
+    for i = 1, POOL_SIZE do
+        local row = new("Frame", {
             Parent = scrollSelect,
             BackgroundColor3 = colors.bg2,
             BackgroundTransparency = 0.5,
-            Size = UDim2.new(1, 0, 0, 26),
-            Name = "Option",
+            Size = UDim2.new(1, 0, 0, ROW_H),
+            Position = UDim2.new(0, 0, 0, (i - 1) * ROW_STRIDE),
+            Visible = false,
             ZIndex = 155
         })
-        new("UICorner", {Parent = optionFrame, CornerRadius = UDim.new(0, 3)})
-        new("UIStroke", {Parent = optionFrame, Color = colors.border, Thickness = 1, Transparency = 0.65})
-        
-        local optionButton = new("TextButton", {
-            Parent = optionFrame,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 1, 0),
-            Text = "",
-            ZIndex = 156
-        })
-        
+        new("UICorner", {Parent = row, CornerRadius = UDim.new(0, 3)})
         new("TextLabel", {
-            Parent = optionFrame,
+            Parent = row,
             Font = Enum.Font.GothamBold,
-            Text = label,
+            Text = "",
             TextSize = fontSize.small,
             TextColor3 = colors.text,
             Position = UDim2.new(0, 8, 0, 0),
@@ -1792,11 +1795,8 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
             Name = "OptionText",
             ZIndex = 156
         })
-        
-        optionFrame:SetAttribute("RealValue", value)
-        
         local chooseFrame = new("Frame", {
-            Parent = optionFrame,
+            Parent = row,
             AnchorPoint = Vector2.new(0, 0.5),
             BackgroundColor3 = colors.primary,
             Position = UDim2.new(0, 2, 0.5, 0),
@@ -1804,70 +1804,97 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
             Name = "ChooseFrame",
             ZIndex = 156
         })
-        new("UIStroke", {Parent = chooseFrame, Color = colors.primary, Thickness = 1.6, Transparency = 0.999})
         new("UICorner", {Parent = chooseFrame, CornerRadius = UDim.new(0, 3)})
-        
-        local conn = optionButton.Activated:Connect(function()
+        local btn = new("TextButton", {
+            Parent = row,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 1, 0),
+            Text = "",
+            AutoButtonColor = false,
+            ZIndex = 157
+        })
+        row.MouseEnter:Connect(function()
+            if row:GetAttribute("VirtualIndex") then
+                row.BackgroundColor3 = colors.bg4
+            end
+        end)
+        row.MouseLeave:Connect(function()
+            local optIndex = row:GetAttribute("VirtualIndex")
+            if optIndex and filteredOptions[optIndex] then
+                paintRow(row, filteredOptions[optIndex])
+            end
+        end)
+        btn.Activated:Connect(function()
+            local optIndex = row:GetAttribute("VirtualIndex")
+            if not optIndex then return end
+            local opt = filteredOptions[optIndex]
+            if not opt then return end
+            local value = opt.value
             if isMulti then
                 local idx = table.find(DropdownFunc.Value, value)
                 if not idx then
                     table.insert(DropdownFunc.Value, value)
-                    DropdownFunc:Set(DropdownFunc.Value)
                 else
                     table.remove(DropdownFunc.Value, idx)
-                    DropdownFunc:Set(DropdownFunc.Value)
                 end
+                rebuildSelectedSet()
+                DropdownFunc:Set(DropdownFunc.Value)
             else
                 DropdownFunc.Value = value
+                rebuildSelectedSet()
                 DropdownFunc:Set(DropdownFunc.Value)
             end
         end)
-        
-        table.insert(optionConns, conn)
-        table.insert(optionFrameCache, {frame = optionFrame, lowerLabel = string.lower(label)})
+        rowPool[i] = row
     end
-    
+
+    self:AddConnection("dropdownScroll_" .. dropdownLayoutOrder, scrollSelect:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+        refreshVisible()
+    end))
+
+    self:AddConnection("dropdownResize_" .. dropdownLayoutOrder, scrollSelect:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        if isOpen then refreshVisible() end
+    end))
+end
+
+function DropdownFunc:Clear()
+        allOptions = {}
+        filteredOptions = {}
+        DropdownFunc.Value = isMulti and {} or nil
+        DropdownFunc.Options = {}
+        rebuildSelectedSet()
+        optionLabel.Text = defaultText
+        scrollSelect.CanvasPosition = Vector2.new(0, 0)
+        refreshVisible()
+    end
+
+    function DropdownFunc:AddOption(option)
+        local label, value
+        if typeof(option) == "table" and option.Label and option.Value ~= nil then
+            label, value = tostring(option.Label), option.Value
+        else
+            label, value = tostring(option), option
+        end
+        allOptions[#allOptions + 1] = {
+            label = label,
+            value = value,
+            lower = string.lower(label),
+        }
+        if searchBox.Text == "" or searchBox.Text == nil then
+            filteredOptions[#filteredOptions + 1] = allOptions[#allOptions]
+        end
+    end
+
     function DropdownFunc:Set(Value)
         if isMulti and type(Value) ~= "table" then Value = {} end
         DropdownFunc.Value = Value
+        rebuildSelectedSet()
         if configPath then
             Library.ConfigSystem.Set(configPath, Value)
             MarkDirty()
         end
-        if isBuilt then
-            if isMulti then
-                -- Multi-select: anggota set bisa banyak berubah, refresh penuh.
-                refreshSelectionVisuals()
-            else
-                -- Single-select: hanya 2 frame yang berubah (lama + baru),
-                -- jadi cat langsung tanpa loop semua opsi.
-                local prev = lastSelectedFrame
-                if prev and prev.Parent then
-                    paintOption(prev, false)
-                end
-                local cur = nil
-                for _, entry in ipairs(optionFrameCache) do
-                    local opt = entry.frame
-                    if opt and opt.Parent and opt:GetAttribute("RealValue") == DropdownFunc.Value then
-                        cur = opt
-                        break
-                    end
-                end
-                if cur then
-                    paintOption(cur, true)
-                    optionLabel.Text = cur.OptionText.Text
-                else
-                    optionLabel.Text = (DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or defaultText
-                end
-                lastSelectedFrame = cur
-            end
-        else
-            if isMulti then
-                optionLabel.Text = (#DropdownFunc.Value == 0) and defaultText or table.concat(DropdownFunc.Value, ", ")
-            else
-                optionLabel.Text = (DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or defaultText
-            end
-        end
+        updateClosedLabel()
+        if isOpen then refreshVisible() end
         if onSelect then
             if isMulti then
                 onSelect(DropdownFunc.Value)
@@ -1876,96 +1903,133 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
             end
         end
     end
-    
+
     function DropdownFunc:SetValue(val) self:Set(val) end
     function DropdownFunc:GetValue() return self.Value end
-    
+
     function DropdownFunc:SetValues(newList, selecting)
         newList = newList or {}
-        selecting = selecting or (isMulti and {} or nil)
-        if isMulti and type(selecting) ~= "table" then selecting = {} end
-        clearOptionFrames()
+        normalizeListInto(newList, allOptions)
         DropdownFunc.Options = newList
-        
-        -- Kita masukkan pembuatan elemen ke dalam task.spawn agar background UI
-        -- tidak menunggu operasi pemrosesan array besar selesai secara kaku.
-        task.spawn(function()
-            local batchSize = 20
-            for i, opt in ipairs(newList) do
-                DropdownFunc:AddOption(opt)
-                if i % batchSize == 0 then
-                    RunService.Heartbeat:Wait()
+        if isMulti then
+            DropdownFunc.Value = {}
+        else
+            DropdownFunc.Value = nil
+        end
+        if selecting ~= nil then
+            if isMulti and type(selecting) == "table" then
+                DropdownFunc.Value = selecting
+            elseif not isMulti then
+                DropdownFunc.Value = selecting
+            end
+        end
+        rebuildSelectedSet()
+        applyFilter(string.lower(searchBox.Text or ""))
+        scrollSelect.CanvasPosition = Vector2.new(0, 0)
+        updateClosedLabel()
+        refreshVisible()
+        if onSelect then
+            if isMulti then
+                onSelect(DropdownFunc.Value)
+            else
+                onSelect((DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or "")
+            end
+        end
+    end
+
+    function DropdownFunc:Refresh(newList)
+        local prevValue = DropdownFunc.Value
+        normalizeListInto(newList, allOptions)
+        DropdownFunc.Options = newList
+        if isMulti then
+            local stillValid = {}
+            if type(prevValue) == "table" then
+                for _, v in ipairs(prevValue) do
+                    for _, opt in ipairs(allOptions) do
+                        if opt.value == v then
+                            stillValid[#stillValid + 1] = v
+                            break
+                        end
+                    end
                 end
             end
-            isBuilt = true
-            DropdownFunc:Set(selecting)
-        end)
+            DropdownFunc.Value = stillValid
+        else
+            local found = false
+            if prevValue ~= nil then
+                for _, opt in ipairs(allOptions) do
+                    if opt.value == prevValue then
+                        found = true
+                        break
+                    end
+                end
+            end
+            DropdownFunc.Value = found and prevValue or nil
+        end
+        rebuildSelectedSet()
+        applyFilter(string.lower(searchBox.Text or ""))
+        updateClosedLabel()
+        if isOpen then refreshVisible() end
+        if configPath then
+            Library.ConfigSystem.Set(configPath, DropdownFunc.Value)
+            MarkDirty()
+        end
     end
-    
-    function DropdownFunc:Refresh(newList)
-        self:SetValues(newList, isMulti and {} or nil)
-    end
-    
+
     self:AddConnection("searchBox_" .. dropdownLayoutOrder, searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        ensureBuilt()
         if searchThread then
             pcall(function() task.cancel(searchThread) end)
             searchThread = nil
         end
         local query = string.lower(searchBox.Text)
         if query == "" then
-            for _, entry in ipairs(optionFrameCache) do
-                if entry.frame and entry.frame.Parent then entry.frame.Visible = true end
-            end
+            applyFilter("")
+            refreshVisible()
             return
         end
         searchThread = task.delay(0.08, function()
             searchThread = nil
-            for _, entry in ipairs(optionFrameCache) do
-                if entry.frame and entry.frame.Parent then
-                    entry.frame.Visible = string.find(entry.lowerLabel, query, 1, true) ~= nil
-                end
+            applyFilter(query)
+            scrollSelect.CanvasPosition = Vector2.new(0, 0)
+            refreshVisible()
+        end)
+    end))
+
+    self:AddConnection("dropdownOpen_" .. dropdownLayoutOrder, dropdownButton.Activated:Connect(function()
+        ensurePoolBuilt()
+        searchBox.Text = ""
+        applyFilter("")
+        scrollSelect.CanvasPosition = Vector2.new(0, 0)
+        isOpen = true
+        self:_showDropdown(dropdownContainer)
+        task.defer(function()
+            refreshVisible()
+            if needsRefresh then
+                task.defer(refreshVisible)
             end
         end)
     end))
-    
-    self:AddConnection("dropdownOpen_" .. dropdownLayoutOrder, dropdownButton.Activated:Connect(function()
-        ensureBuilt()
-        searchBox.Text = ""
-        for _, entry in ipairs(optionFrameCache) do
-            if entry.frame and entry.frame.Parent then
-                entry.frame.Visible = true
-            end
+
+    self:AddConnection("dropdownOverlayClose_" .. dropdownLayoutOrder, self._dropdownOverlay:GetPropertyChangedSignal("Visible"):Connect(function()
+        if not self._dropdownOverlay.Visible and isOpen then
+            isOpen = false
         end
-        self:_showDropdown(dropdownContainer)
     end))
-    
-    DropdownFunc.Options = items
-    DropdownFunc.Value   = savedValue
-    if isMulti and type(DropdownFunc.Value) ~= "table" then
-        DropdownFunc.Value = {}
-    end
-    if not isMulti and DropdownFunc.Value ~= nil then
-        optionLabel.Text = tostring(DropdownFunc.Value)
-    elseif isMulti and type(DropdownFunc.Value) == "table" and #DropdownFunc.Value > 0 then
-        optionLabel.Text = table.concat(DropdownFunc.Value, ", ")
-    end
-    
+
+    normalizeListInto(items, allOptions)
+    applyFilter("")
+    rebuildSelectedSet()
+    updateClosedLabel()
+
     if configPath then
         local cbType = isMulti and "multidropdown" or "dropdown"
         local cbDef = isMulti and (defaultValue or {}) or defaultValue
         RegisterCallback(configPath, onSelect, cbType, cbDef, function(val)
             if isMulti and type(val) ~= "table" then val = {} end
             DropdownFunc.Value = val
-            if isBuilt then
-                refreshSelectionVisuals()
-            else
-                if isMulti then
-                    optionLabel.Text = (#val == 0) and defaultText or table.concat(val, ", ")
-                else
-                    optionLabel.Text = (val ~= nil) and tostring(val) or defaultText
-                end
-            end
+            rebuildSelectedSet()
+            updateClosedLabel()
+            if isOpen then refreshVisible() end
         end)
     end
     
@@ -2004,7 +2068,6 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         BackgroundColor3 = colors.bg3,
         BackgroundTransparency = panelTransparency,
         BorderSizePixel = 0,
-        ClipsDescendants = true,
         ZIndex = 8
     })
     new("UICorner", {Parent = inputBg, CornerRadius = UDim.new(0, 4)})
@@ -2021,7 +2084,7 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         TextColor3 = colors.text,
         PlaceholderColor3 = colors.textDimmer,
         TextXAlignment = Enum.TextXAlignment.Left,
-        ClipsDescendants = true,
+        TextTruncate = Enum.TextTruncate.AtEnd,
         ClearTextOnFocus = false,
         ZIndex = 9
     })
