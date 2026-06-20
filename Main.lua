@@ -41,9 +41,20 @@ local colors = {
     textDimmer = Color3.fromRGB(168, 158, 148),
     border = Color3.fromRGB(62, 54, 48),
 }
-local windowSize = UDim2.new(0, 420, 0, 280)
-local minWindowSize = Vector2.new(380, 250)
-local maxWindowSize = Vector2.new(800, 600)
+-- Detect platform: mobile = touch primary with no mouse; PC = everything else.
+-- Mobile keeps the original compact size; PC gets a larger default and a wider
+-- resize ceiling so the window can stretch for desktop play.
+local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+local windowSize, minWindowSize, maxWindowSize
+if isMobile then
+    windowSize    = UDim2.new(0, 420, 0, 280) -- sama persis seperti ukuran lama
+    minWindowSize = Vector2.new(380, 250)
+    maxWindowSize = Vector2.new(800, 600)
+else -- PC / desktop
+    windowSize    = UDim2.new(0, 560, 0, 360) -- lebih lebar & lebih tinggi
+    minWindowSize = Vector2.new(440, 300)
+    maxWindowSize = Vector2.new(1100, 760)    -- ceiling resize lebih besar
+end
 local sidebarWidth = 120
 local headerHeight = 34
 local topBarHeight = 28
@@ -780,6 +791,10 @@ function Library:CreateWindow(config)
         end
     end))
     self:AddConnection("inputEnded", UserInputService.InputEnded:Connect(function(input)
+        -- InputEnded fires pada setiap input globally. Saat tidak ada drag/resize
+        -- aktif, tidak ada yang harus dilakukan -- keluar lebih awal supaya tidak
+        -- menjalankan dua assignment + pemanggilan fungsi untuk setiap input idle.
+        if not dragging and not resizing then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
             resizing = false
@@ -1217,8 +1232,8 @@ function Library:CreateCategory(parent, title, startOpen)
     startOpen = startOpen == true
     local categoryFrame = new("Frame", {
         Parent = parent,
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
+        Size = UDim2.new(1, 0, 0, sectionHeaderHeight),
+        AutomaticSize = Enum.AutomaticSize.None,
         BackgroundColor3 = colors.bg2,
         BackgroundTransparency = sectionTransparency,
         BorderSizePixel = 0,
@@ -1278,15 +1293,37 @@ function Library:CreateCategory(parent, title, startOpen)
         PaddingRight = UDim.new(0, 10),
         PaddingBottom = UDim.new(0, 6)
     })
-    new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
+    local contentListLayout = new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
     local isOpen = startOpen
     arrow.Rotation = startOpen and 180 or 0
+
+    -- Background the section frame manually instead of relying on AutomaticSize.
+    -- A Frame whose height is driven by AutomaticSize inside a ScrollingFrame
+    -- does not reliably repaint its background when a child's Visible toggles,
+    -- so the section bg only appears after a scroll/layout pass is forced. We
+    -- compute the height from the content list's AbsoluteContentSize and update
+    -- it on content change and on open/close, which keeps the bg correct at all
+    -- times without needing the user to scroll first.
+    local function updateCategoryHeight()
+        if not categoryFrame or not categoryFrame.Parent then return end
+        local h = sectionHeaderHeight
+        if isOpen and contentContainer.Visible then
+            h = sectionHeaderHeight + contentListLayout.AbsoluteContentSize.Y
+        end
+        categoryFrame.Size = UDim2.new(1, 0, 0, h)
+    end
 
     local function setOpen(state)
         isOpen = state
         contentContainer.Visible = isOpen
         arrow.Rotation = isOpen and 180 or 0
+        updateCategoryHeight()
     end
+
+    contentListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCategoryHeight)
+    -- Defer once so the initial size is set after the layout settles, covering
+    -- any content that was added before this connect fired.
+    task.defer(updateCategoryHeight)
 
     header.MouseButton1Click:Connect(function()
         setOpen(not isOpen)
@@ -1593,11 +1630,11 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
         Padding = UDim.new(0, 3),
         SortOrder = Enum.SortOrder.LayoutOrder
     })
-    
-    self:AddConnection("dropdownLayout_" .. dropdownLayoutOrder, listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scrollSelect.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
-    end))
-    
+    -- Canvas height dihitung native oleh AutomaticCanvasSize (lihat prop di
+    -- scrollSelect). Dulu ada listener manual di sini yang set CanvasSize tiap
+    -- AbsoluteContentSize berubah; itu duplikat pekerjaan dan fires ribuan kali
+    -- saat opsi dirender/disaring, jadi dihapus demi performa.
+
     local savedValue = configPath and Library.ConfigSystem.Get(configPath, defaultValue) or defaultValue
     if isMulti and type(savedValue) ~= "table" then savedValue = {} end
     
@@ -1606,7 +1643,27 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
     local optionConns = {}
     local searchThread = nil
     local isBuilt = false
-    
+    local lastSelectedFrame = nil -- frame opsi terakhir yang dipilih (single-select)
+
+    -- Harga termurah untuk memilih/membatalkan satu opsi: set semua properti
+    -- visualnya sesuai state selected. Dipakai oleh refreshSelectionVisuals
+    -- maupun update-satu-opsi pada klik, supaya konsisten & tanpa duplikat.
+    local function paintOption(opt, selected)
+        if selected then
+            opt.ChooseFrame.Size = UDim2.new(0, 3, 0, 16)
+            opt.ChooseFrame.UIStroke.Transparency = 0.35
+            opt.BackgroundColor3 = colors.bg3
+            opt.BackgroundTransparency = panelTransparency
+            opt.OptionText.TextColor3 = colors.text
+        else
+            opt.ChooseFrame.Size = UDim2.new(0, 0, 0, 0)
+            opt.ChooseFrame.UIStroke.Transparency = 1
+            opt.BackgroundColor3 = colors.bg2
+            opt.BackgroundTransparency = 0.5
+            opt.OptionText.TextColor3 = colors.textDim
+        end
+    end
+
     local function disconnectOptionConns()
         for i = #optionConns, 1, -1 do
             local c = optionConns[i]
@@ -1642,26 +1699,27 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
     end
     
     local function refreshSelectionVisuals()
+        -- Bangun lookup set satu kali (O(n)) lalu cek keanggotaan O(1), bukan
+        -- table.find O(n) di dalam loop O(n) yang bikin O(n²) per pemilihan.
+        local selectedSet
+        if isMulti then
+            selectedSet = {}
+            for _, v in ipairs(DropdownFunc.Value) do
+                selectedSet[v] = true
+            end
+        end
+        local currentValue = DropdownFunc.Value
         local texts = {}
+        lastSelectedFrame = nil
         for _, entry in ipairs(optionFrameCache) do
             local opt = entry.frame
             if opt and opt.Parent then
                 local v = opt:GetAttribute("RealValue")
-                local selected = isMulti and table.find(DropdownFunc.Value, v) or (not isMulti and DropdownFunc.Value == v)
-                
+                local selected = isMulti and (selectedSet[v] == true) or (not isMulti and currentValue == v)
+                paintOption(opt, selected)
                 if selected then
-                    opt.ChooseFrame.Size = UDim2.new(0, 3, 0, 16)
-                    opt.ChooseFrame.UIStroke.Transparency = 0.35
-                    opt.BackgroundColor3 = colors.bg3
-                    opt.BackgroundTransparency = panelTransparency
-                    opt.OptionText.TextColor3 = colors.text
+                    if not isMulti then lastSelectedFrame = opt end
                     table.insert(texts, opt.OptionText.Text)
-                else
-                    opt.ChooseFrame.Size = UDim2.new(0, 0, 0, 0)
-                    opt.ChooseFrame.UIStroke.Transparency = 1
-                    opt.BackgroundColor3 = colors.bg2
-                    opt.BackgroundTransparency = 0.5
-                    opt.OptionText.TextColor3 = colors.textDim
                 end
             end
         end
@@ -1751,20 +1809,18 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
         
         local conn = optionButton.Activated:Connect(function()
             if isMulti then
-                if not table.find(DropdownFunc.Value, value) then
+                local idx = table.find(DropdownFunc.Value, value)
+                if not idx then
                     table.insert(DropdownFunc.Value, value)
+                    DropdownFunc:Set(DropdownFunc.Value)
                 else
-                    for i, v in pairs(DropdownFunc.Value) do
-                        if v == value then
-                            table.remove(DropdownFunc.Value, i)
-                            break
-                        end
-                    end
+                    table.remove(DropdownFunc.Value, idx)
+                    DropdownFunc:Set(DropdownFunc.Value)
                 end
             else
                 DropdownFunc.Value = value
+                DropdownFunc:Set(DropdownFunc.Value)
             end
-            DropdownFunc:Set(DropdownFunc.Value)
         end)
         
         table.insert(optionConns, conn)
@@ -1779,7 +1835,32 @@ function Library:_createBaseDropdown(parent, title, imageId, items, configPath, 
             MarkDirty()
         end
         if isBuilt then
-            refreshSelectionVisuals()
+            if isMulti then
+                -- Multi-select: anggota set bisa banyak berubah, refresh penuh.
+                refreshSelectionVisuals()
+            else
+                -- Single-select: hanya 2 frame yang berubah (lama + baru),
+                -- jadi cat langsung tanpa loop semua opsi.
+                local prev = lastSelectedFrame
+                if prev and prev.Parent then
+                    paintOption(prev, false)
+                end
+                local cur = nil
+                for _, entry in ipairs(optionFrameCache) do
+                    local opt = entry.frame
+                    if opt and opt.Parent and opt:GetAttribute("RealValue") == DropdownFunc.Value then
+                        cur = opt
+                        break
+                    end
+                end
+                if cur then
+                    paintOption(cur, true)
+                    optionLabel.Text = cur.OptionText.Text
+                else
+                    optionLabel.Text = (DropdownFunc.Value ~= nil) and tostring(DropdownFunc.Value) or defaultText
+                end
+                lastSelectedFrame = cur
+            end
         else
             if isMulti then
                 optionLabel.Text = (#DropdownFunc.Value == 0) and defaultText or table.concat(DropdownFunc.Value, ", ")
@@ -1975,8 +2056,7 @@ function Library:CreateButton(parent, label, callback)
     local btnFrame = new("Frame", {
         Parent = parent,
         Size = UDim2.new(1, 0, 0, 28),
-        BackgroundColor3 = colors.primary,
-        BackgroundTransparency = panelTransparency,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ZIndex = 8
     })
@@ -1984,45 +2064,35 @@ function Library:CreateButton(parent, label, callback)
     local button = new("TextButton", {
         Parent = btnFrame,
         Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
+        BackgroundColor3 = colors.primary,
+        BackgroundTransparency = panelTransparency,
         Text = label,
         Font = Enum.Font.GothamBold,
         TextSize = fontSize.normal,
         TextColor3 = colors.text,
-        AutoButtonColor = false,
+        -- AutoButtonColor (API lama/universal) otomatis menggelapkan tombol saat
+        -- ditekan, jadi tidak butuh 3 connection Lua (Down/Up/Leave) hanya untuk
+        -- feedback warna. Warna dipindah dari btnFrame ke button supaya efek
+        -- tekan benar-benar terlihat. (AutoButtonColorProperties tidak dipakai
+        -- karena belum didukung semua executor.)
+        AutoButtonColor = true,
         ZIndex = 9
     })
-    
+    new("UICorner", {Parent = button, CornerRadius = UDim.new(0, 5)})
+
     local isClicking = false
-    local darkerColor = Color3.new(colors.primary.R * 0.7, colors.primary.G * 0.7, colors.primary.B * 0.7)
-    
-    self:AddConnection("btn_" .. label .. tostring(button), button.MouseButton1Down:Connect(function()
-        if isClicking then return end
-        btnFrame.BackgroundColor3 = darkerColor
-        btnFrame.BackgroundTransparency = 0
-    end))
-
-    self:AddConnection("btn_up_" .. label .. tostring(button), button.MouseButton1Up:Connect(function()
-        btnFrame.BackgroundColor3 = colors.primary
-        btnFrame.BackgroundTransparency = panelTransparency
-    end))
-
-    self:AddConnection("btn_leave_" .. label .. tostring(button), button.MouseLeave:Connect(function()
-        btnFrame.BackgroundColor3 = colors.primary
-        btnFrame.BackgroundTransparency = panelTransparency
-    end))
 
     self:AddConnection("btn_click_" .. label .. tostring(button), button.MouseButton1Click:Connect(function()
         if isClicking then return end
         isClicking = true
-        
+
         -- Jalankan callback di thread terpisah agar tidak membekukan UI
         if callback then
             task.spawn(function()
                 pcall(callback)
             end)
         end
-        
+
         -- Anti-spam klik cepat
         task.delay(0.1, function()
             isClicking = false
@@ -2162,6 +2232,13 @@ function Library:_createConfigTab(WindowObject)
     })
 
     local mgmtSection = configTab:AddSection("Config Management")
+    -- Warna tombol sekarang disimpan di child TextButton (lihat CreateButton),
+    -- bukan di frame-nya. Helper ini menargetkan child tsb saat ganti warna
+    -- konfirmasi reset/delete.
+    local function setBtnColor(frame, color)
+        local btn = frame:FindFirstChildWhichIsA("TextButton")
+        if btn then btn.BackgroundColor3 = color end
+    end
     mgmtSection:AddButton({
         Title    = "Save Config Now",
         Callback = function()
@@ -2185,20 +2262,20 @@ function Library:_createConfigTab(WindowObject)
                 resetConfirm = true
                 local btn = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
                 if btn then btn.Text = "Klik lagi untuk konfirmasi!" end
-                resetBtnFrame.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+                setBtnColor(resetBtnFrame, Color3.fromRGB(255, 100, 0))
                 if resetThread then task.cancel(resetThread) end
                 resetThread = task.delay(3, function()
                     resetConfirm = false
                     local b = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
                     if b then b.Text = "Reset to Default" end
-                    resetBtnFrame.BackgroundColor3 = colors.primary
+                    setBtnColor(resetBtnFrame, colors.primary)
                 end)
             else
                 if resetThread then task.cancel(resetThread) end
                 resetConfirm = false
                 local btn = resetBtnFrame:FindFirstChildWhichIsA("TextButton")
                 if btn then btn.Text = "Reset to Default" end
-                resetBtnFrame.BackgroundColor3 = colors.primary
+                setBtnColor(resetBtnFrame, colors.primary)
                 Library.ConfigSystem.Reset()
                 ExecuteConfigCallbacks()
                 self:MakeNotify({
@@ -2226,20 +2303,20 @@ function Library:_createConfigTab(WindowObject)
                 deleteConfirm = true
                 local btn = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
                 if btn then btn.Text = "Klik lagi untuk konfirmasi!" end
-                deleteBtnFrame.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+                setBtnColor(deleteBtnFrame, Color3.fromRGB(200, 30, 30))
                 if deleteThread then task.cancel(deleteThread) end
                 deleteThread = task.delay(3, function()
                     deleteConfirm = false
                     local b = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
                     if b then b.Text = "Delete Config File" end
-                    deleteBtnFrame.BackgroundColor3 = colors.primary
+                    setBtnColor(deleteBtnFrame, colors.primary)
                 end)
             else
                 if deleteThread then task.cancel(deleteThread) end
                 deleteConfirm = false
                 local btn = deleteBtnFrame:FindFirstChildWhichIsA("TextButton")
                 if btn then btn.Text = "Delete Config File" end
-                deleteBtnFrame.BackgroundColor3 = colors.primary
+                setBtnColor(deleteBtnFrame, colors.primary)
                 Library.ConfigSystem.Delete()
                 self:MakeNotify({
                     Title       = "Config",
@@ -2521,6 +2598,10 @@ function Library:Window(config)
                     ZIndex = 8
                 })
 
+                -- Tinggi label dihitung manual dari TextBounds. AutomaticSize.Y + 
+                -- TextWrapped terbukti rapuh: sebelum wrap-width terukur, lebar
+                -- kolaps ~1 karakter sehingga teks memanjang 1 huruf per baris.
+                -- Reflow ini hanya jalan saat create/SetText, bukan hotspot per-frame.
                 local reflowPending = false
                 local function reflow()
                     if reflowPending then return end
