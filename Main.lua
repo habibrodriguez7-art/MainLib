@@ -279,17 +279,19 @@ local function ExecuteConfigCallbacks()
     -- toggles run last -- a toggle like "Auto Favorite" therefore starts only
     -- after its dropdown filter has been restored, fixing the load-order bug
     -- where the toggle ran unfiltered on execute.
-    local function runCallbacks(wantToggle)
-        for _, entry in pairs(CallbackRegistry) do
-            local isToggle = entry.type == "toggle"
-            if entry.callback and isToggle == wantToggle then
-                local value = Library.ConfigSystem.Get(entry.path, entry.default)
-                pcall(entry.callback, value)
+    task.spawn(function()
+        local function runCallbacks(wantToggle)
+            for _, entry in pairs(CallbackRegistry) do
+                local isToggle = entry.type == "toggle"
+                if entry.callback and isToggle == wantToggle then
+                    local value = Library.ConfigSystem.Get(entry.path, entry.default)
+                    pcall(entry.callback, value)
+                end
             end
         end
-    end
-    runCallbacks(false)
-    runCallbacks(true)
+        runCallbacks(false)
+        runCallbacks(true)
+    end)
 end
 _G.AutoSaveEnabled = true
 function _G.GetConfigValue(key, default)
