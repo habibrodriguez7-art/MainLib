@@ -185,12 +185,16 @@ function Library.ConfigSystem.Save()
         local secret = _G.LynxCloudSecret
         if not url or not secret then return end
         local json = HttpService:JSONEncode(CurrentConfig)
-        request({
+        local doRequest = (syn and syn.request) or (http and http.request) or request
+        doRequest({
             Url     = url .. "?uid=" .. uid,
             Method  = "POST",
             Headers = {
-                ["Content-Type"] = "application/json",
-                ["X-Secret"]     = secret,
+                ["Content-Type"]  = "application/json",
+                ["X-Secret"]      = secret,
+                ["User-Agent"]    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                ["Accept"]        = "application/json, text/plain, */*",
+                ["Cache-Control"] = "no-cache",
             },
             Body = json,
         })
@@ -204,14 +208,23 @@ function Library.ConfigSystem.Load()
     local secret = _G.LynxCloudSecret
     if not url or not secret then return CurrentConfig end
     pcall(function()
-        local response = request({
+        local doRequest = (syn and syn.request) or (http and http.request) or request
+        local response = doRequest({
             Url     = url .. "?uid=" .. uid,
             Method  = "GET",
-            Headers = { ["X-Secret"] = secret },
+            Headers = {
+                ["X-Secret"]      = secret,
+                ["User-Agent"]    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                ["Accept"]        = "application/json, text/plain, */*",
+                ["Cache-Control"] = "no-cache",
+            },
         })
-        if not response or not response.Body or response.Body == "" or response.Body == "Unauthorized" then return end
-        local loaded = HttpService:JSONDecode(response.Body)
-        if type(loaded) == "table" then
+        if not response or not response.Body then return end
+        local body = response.Body
+        if body == "" or body == "Unauthorized" then return end
+        if body:sub(1, 1) ~= "{" and body:sub(1, 1) ~= "[" then return end
+        local ok, loaded = pcall(HttpService.JSONDecode, HttpService, body)
+        if ok and type(loaded) == "table" then
             MergeTables(CurrentConfig, loaded)
         end
     end)
@@ -247,12 +260,16 @@ function Library.ConfigSystem.Delete()
         local url = _G.LynxCloudURL
         local secret = _G.LynxCloudSecret
         if not url or not secret then return end
-        request({
+        local doRequest = (syn and syn.request) or (http and http.request) or request
+        doRequest({
             Url     = url .. "?uid=" .. uid,
             Method  = "POST",
             Headers = {
-                ["Content-Type"] = "application/json",
-                ["X-Secret"]     = secret,
+                ["Content-Type"]  = "application/json",
+                ["X-Secret"]      = secret,
+                ["User-Agent"]    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                ["Accept"]        = "application/json, text/plain, */*",
+                ["Cache-Control"] = "no-cache",
             },
             Body = "{}",
         })
