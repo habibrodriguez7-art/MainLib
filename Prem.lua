@@ -187,14 +187,12 @@ function Library.ConfigSystem.Save()
         local json = HttpService:JSONEncode(CurrentConfig)
         local doRequest = (syn and syn.request) or (http and http.request) or request
         doRequest({
-            Url     = url .. "?uid=" .. uid,
+            Url     = url,
             Method  = "POST",
             Headers = {
-                ["Content-Type"]  = "application/json",
-                ["X-Secret"]      = secret,
-                ["User-Agent"]    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                ["Accept"]        = "application/json, text/plain, */*",
-                ["Cache-Control"] = "no-cache",
+                ["Content-Type"] = "application/json",
+                ["X-Secret"]     = secret,
+                ["X-UID"]        = uid,
             },
             Body = json,
         })
@@ -210,13 +208,11 @@ function Library.ConfigSystem.Load()
     pcall(function()
         local doRequest = (syn and syn.request) or (http and http.request) or request
         local response = doRequest({
-            Url     = url .. "?uid=" .. uid,
+            Url     = url,
             Method  = "GET",
             Headers = {
-                ["X-Secret"]      = secret,
-                ["User-Agent"]    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                ["Accept"]        = "application/json, text/plain, */*",
-                ["Cache-Control"] = "no-cache",
+                ["X-Secret"] = secret,
+                ["X-UID"]    = uid,
             },
         })
         if not response or not response.Body then return end
@@ -262,14 +258,12 @@ function Library.ConfigSystem.Delete()
         if not url or not secret then return end
         local doRequest = (syn and syn.request) or (http and http.request) or request
         doRequest({
-            Url     = url .. "?uid=" .. uid,
+            Url     = url,
             Method  = "POST",
             Headers = {
-                ["Content-Type"]  = "application/json",
-                ["X-Secret"]      = secret,
-                ["User-Agent"]    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                ["Accept"]        = "application/json, text/plain, */*",
-                ["Cache-Control"] = "no-cache",
+                ["Content-Type"] = "application/json",
+                ["X-Secret"]     = secret,
+                ["X-UID"]        = uid,
             },
             Body = "{}",
         })
