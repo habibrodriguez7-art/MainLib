@@ -210,9 +210,25 @@ local function _findGistId(token, filename)
     end
     return nil
 end
-local function _createGist(token, filename, content)
+local _usernameCache = nil
+local function _fetchUsername(uid)
+    if _usernameCache then return _usernameCache end
+    local ok, res = pcall(_gistRequest, {
+        Url    = "https://users.roblox.com/v1/users/" .. uid,
+        Method = "GET",
+        Headers = { ["User-Agent"] = "LynxScript" },
+    })
+    if not ok or not res or not res.Body then return "unknown" end
+    local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
+    if ok2 and type(parsed) == "table" and parsed.name then
+        _usernameCache = parsed.name
+        return parsed.name
+    end
+    return "unknown"
+end
+local function _createGist(token, filename, content, desc)
     local body = HttpService:JSONEncode({
-        description = "Lynx Config",
+        description = desc or "",
         public      = false,
         files       = { [filename] = { content = content } },
     })
@@ -235,8 +251,9 @@ local function _createGist(token, filename, content)
     end
     return nil
 end
-local function _updateGist(token, gistId, filename, content)
+local function _updateGist(token, gistId, filename, content, desc)
     local body = HttpService:JSONEncode({
+        description = desc or "",
         files = { [filename] = { content = content } },
     })
     pcall(_gistRequest, {
@@ -256,13 +273,16 @@ function Library.ConfigSystem.Save()
     pcall(function()
         local token = _G.LynxGistToken
         if not token then return end
+        local uid      = tostring(Players.LocalPlayer.UserId)
         local filename = _gistFilename()
-        local content  = HttpService:JSONEncode(CurrentConfig)
+        local username = _fetchUsername(uid)
+        local desc     = username .. " | " .. uid
+        local data     = HttpService:JSONEncode(CurrentConfig)
         local gistId   = _findGistId(token, filename)
         if gistId then
-            _updateGist(token, gistId, filename, content)
+            _updateGist(token, gistId, filename, data, desc)
         else
-            _createGist(token, filename, content)
+            _createGist(token, filename, data, desc)
         end
     end)
     return true
