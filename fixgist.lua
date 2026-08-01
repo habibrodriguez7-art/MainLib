@@ -1,4 +1,3 @@
-
 local Library = {}
 Library.flags = {}
 Library.pages = {}
@@ -189,24 +188,30 @@ local function _gistFilename()
 end
 local function _findGistId(token, filename)
     if _gistIdCache then return _gistIdCache end
-    local ok, res = pcall(_gistRequest, {
-        Url    = "https://api.github.com/gists",
-        Method = "GET",
-        Headers = {
-            ["Authorization"] = "token " .. token,
-            ["Accept"]        = "application/vnd.github+json",
-            ["User-Agent"]    = "LynxScript",
-        },
-    })
-    if not ok or not res or not res.Body then return nil end
-    if res.Body:sub(1, 1) ~= "[" then return nil end
-    local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-    if not ok2 or type(parsed) ~= "table" then return nil end
-    for _, gist in ipairs(parsed) do
-        if type(gist.files) == "table" and gist.files[filename] then
-            _gistIdCache = gist.id
-            return gist.id
+    local page = 1
+    while page <= 10 do
+        local ok, res = pcall(_gistRequest, {
+            Url    = "https://api.github.com/gists?per_page=100&page=" .. page,
+            Method = "GET",
+            Headers = {
+                ["Authorization"] = "token " .. token,
+                ["Accept"]        = "application/vnd.github+json",
+                ["User-Agent"]    = "LynxScript",
+            },
+        })
+        if not ok or not res or not res.Body then return nil end
+        if res.Body:sub(1, 1) ~= "[" then return nil end
+        local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
+        if not ok2 or type(parsed) ~= "table" then return nil end
+        if #parsed == 0 then break end
+        for _, gist in ipairs(parsed) do
+            if type(gist.files) == "table" and gist.files[filename] then
+                _gistIdCache = gist.id
+                return gist.id
+            end
         end
+        if #parsed < 100 then break end
+        page = page + 1
     end
     return nil
 end
@@ -256,7 +261,7 @@ local function _updateGist(token, gistId, filename, content, desc)
         description = desc or "",
         files = { [filename] = { content = content } },
     })
-    pcall(_gistRequest, {
+    local ok, res = pcall(_gistRequest, {
         Url    = "https://api.github.com/gists/" .. gistId,
         Method = "PATCH",
         Headers = {
@@ -267,6 +272,12 @@ local function _updateGist(token, gistId, filename, content, desc)
         },
         Body = body,
     })
+    if not ok or not res then return false end
+    if res.StatusCode == 404 then
+        _gistIdCache = nil
+        return false
+    end
+    return res.StatusCode == 200
 end
 
 function Library.ConfigSystem.Save()
@@ -280,7 +291,11 @@ function Library.ConfigSystem.Save()
         local data     = HttpService:JSONEncode(CurrentConfig)
         local gistId   = _findGistId(token, filename)
         if gistId then
-            _updateGist(token, gistId, filename, data, desc)
+            local updated = _updateGist(token, gistId, filename, data, desc)
+            if not updated then
+                _gistIdCache = nil
+                _createGist(token, filename, data, desc)
+            end
         else
             _createGist(token, filename, data, desc)
         end
@@ -369,7 +384,7 @@ local function MarkDirty()
         pcall(function() task.cancel(Library._saveThread) end)
         Library._saveThread = nil
     end
-    Library._saveThread = task.delay(60, function()
+    Library._saveThread = task.delay(10, function()
         if not isDirty then
             Library._saveThread = nil
             return
@@ -2540,13 +2555,11 @@ function Library:Window(config)
     WindowObject._tabOrder = 0
     Library._initialized = false
     Library._pendingWindowObj = WindowObject
-    task.defer(function()
+    task.spawn(function()
         pcall(function() Library.ConfigSystem.Load() end)
-        task.defer(function()
-            if not Library._initialized then
-                Library:Initialize()
-            end
-        end)
+        if not Library._initialized then
+            Library:Initialize()
+        end
     end)
     function WindowObject:AddTab(tabConfig)
         tabConfig = tabConfig or {}
