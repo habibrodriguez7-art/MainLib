@@ -27,18 +27,18 @@ local RunService      = game:GetService("RunService")
 local HttpService     = game:GetService("HttpService")
 local localPlayer     = Players.LocalPlayer
 local colors = {
-    primary = Color3.fromRGB(255, 140, 0),
+    primary = Color3.fromRGB(220, 38, 38),
     secondary = Color3.fromRGB(147, 112, 219),
     accent = Color3.fromRGB(186, 85, 211),
     success = Color3.fromRGB(34, 197, 94),
-    bg1 = Color3.fromRGB(14, 12, 11),
-    bg2 = Color3.fromRGB(26, 23, 21),
-    bg3 = Color3.fromRGB(40, 35, 31),
-    bg4 = Color3.fromRGB(56, 48, 42),
+    bg1 = Color3.fromRGB(15, 10, 10),
+    bg2 = Color3.fromRGB(28, 18, 18),
+    bg3 = Color3.fromRGB(44, 28, 28),
+    bg4 = Color3.fromRGB(62, 38, 38),
     text = Color3.fromRGB(252, 249, 246),
-    textDim = Color3.fromRGB(214, 206, 198),
-    textDimmer = Color3.fromRGB(168, 158, 148),
-    border = Color3.fromRGB(62, 54, 48),
+    textDim = Color3.fromRGB(214, 200, 200),
+    textDimmer = Color3.fromRGB(168, 145, 145),
+    border = Color3.fromRGB(85, 45, 45),
 }
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
