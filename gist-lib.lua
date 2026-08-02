@@ -28,18 +28,18 @@ local RunService      = game:GetService("RunService")
 local HttpService     = game:GetService("HttpService")
 local localPlayer     = Players.LocalPlayer
 local colors = {
-    primary = Color3.fromRGB(255, 140, 0),
+    primary = Color3.fromRGB(220, 38, 38),
     secondary = Color3.fromRGB(147, 112, 219),
     accent = Color3.fromRGB(186, 85, 211),
     success = Color3.fromRGB(34, 197, 94),
-    bg1 = Color3.fromRGB(14, 12, 11),
-    bg2 = Color3.fromRGB(26, 23, 21),
-    bg3 = Color3.fromRGB(40, 35, 31),
-    bg4 = Color3.fromRGB(56, 48, 42),
+    bg1 = Color3.fromRGB(15, 10, 10),
+    bg2 = Color3.fromRGB(28, 18, 18),
+    bg3 = Color3.fromRGB(44, 28, 28),
+    bg4 = Color3.fromRGB(62, 38, 38),
     text = Color3.fromRGB(252, 249, 246),
-    textDim = Color3.fromRGB(214, 206, 198),
-    textDimmer = Color3.fromRGB(168, 158, 148),
-    border = Color3.fromRGB(62, 54, 48),
+    textDim = Color3.fromRGB(214, 200, 200),
+    textDimmer = Color3.fromRGB(168, 145, 145),
+    border = Color3.fromRGB(85, 45, 45),
 }
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
@@ -173,150 +173,38 @@ local function MergeTables(target, source)
         end
     end
 end
-
+local function EnsureFolderExists()
+    if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
+end
 Library.ConfigSystem = {}
 function Library.ConfigSystem.SetDefaults(defaults)
     DefaultConfig = DeepCopy(defaults)
 end
-
-local _gistIdCache = nil
-local function _gistRequest(opts)
-    local fn = (syn and syn.request) or (http and http.request) or request
-    return fn(opts)
-end
-local function _gistFilename()
-    return "lynx_" .. tostring(Players.LocalPlayer.UserId) .. ".json"
-end
-local function _findGistId(token, filename)
-    if _gistIdCache then return _gistIdCache end
-    local ok, res = pcall(_gistRequest, {
-        Url    = "https://api.github.com/gists",
-        Method = "GET",
-        Headers = {
-            ["Authorization"] = "token " .. token,
-            ["Accept"]        = "application/vnd.github+json",
-            ["User-Agent"]    = "LynxScript",
-        },
-    })
-    if not ok or not res or not res.Body then return nil end
-    if res.Body:sub(1, 1) ~= "[" then return nil end
-    local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-    if not ok2 or type(parsed) ~= "table" then return nil end
-    for _, gist in ipairs(parsed) do
-        if type(gist.files) == "table" and gist.files[filename] then
-            _gistIdCache = gist.id
-            return gist.id
-        end
-    end
-    return nil
-end
-local _usernameCache = nil
-local function _fetchUsername(uid)
-    if _usernameCache then return _usernameCache end
-    local ok, res = pcall(_gistRequest, {
-        Url    = "https://users.roblox.com/v1/users/" .. uid,
-        Method = "GET",
-        Headers = { ["User-Agent"] = "LynxScript" },
-    })
-    if not ok or not res or not res.Body then return "unknown" end
-    local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-    if ok2 and type(parsed) == "table" and parsed.name then
-        _usernameCache = parsed.name
-        return parsed.name
-    end
-    return "unknown"
-end
-local function _createGist(token, filename, content, desc)
-    local body = HttpService:JSONEncode({
-        description = desc or "",
-        public      = false,
-        files       = { [filename] = { content = content } },
-    })
-    local ok, res = pcall(_gistRequest, {
-        Url    = "https://api.github.com/gists",
-        Method = "POST",
-        Headers = {
-            ["Authorization"] = "token " .. token,
-            ["Accept"]        = "application/vnd.github+json",
-            ["Content-Type"]  = "application/json",
-            ["User-Agent"]    = "LynxScript",
-        },
-        Body = body,
-    })
-    if not ok or not res or not res.Body then return nil end
-    local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-    if ok2 and type(parsed) == "table" and parsed.id then
-        _gistIdCache = parsed.id
-        return parsed.id
-    end
-    return nil
-end
-local function _updateGist(token, gistId, filename, content, desc)
-    local body = HttpService:JSONEncode({
-        description = desc or "",
-        files = { [filename] = { content = content } },
-    })
-    pcall(_gistRequest, {
-        Url    = "https://api.github.com/gists/" .. gistId,
-        Method = "PATCH",
-        Headers = {
-            ["Authorization"] = "token " .. token,
-            ["Accept"]        = "application/vnd.github+json",
-            ["Content-Type"]  = "application/json",
-            ["User-Agent"]    = "LynxScript",
-        },
-        Body = body,
-    })
-end
-
 function Library.ConfigSystem.Save()
-    pcall(function()
-        local token = _G.LynxGistToken
-        if not token then return end
-        local uid      = tostring(Players.LocalPlayer.UserId)
-        local filename = _gistFilename()
-        local username = _fetchUsername(uid)
-        local desc     = username .. " | " .. uid
-        local data     = HttpService:JSONEncode(CurrentConfig)
-        local gistId   = _findGistId(token, filename)
-        if gistId then
-            _updateGist(token, gistId, filename, data, desc)
-        else
-            _createGist(token, filename, data, desc)
-        end
+    local ok, err = pcall(function()
+        EnsureFolderExists()
+        local encoded = HttpService:JSONEncode(CurrentConfig)
+        writefile(CONFIG_FILE, encoded)
     end)
-    return true
+    return ok
 end
 function Library.ConfigSystem.Load()
+    EnsureFolderExists()
     CurrentConfig = DeepCopy(DefaultConfig)
-    local token = _G.LynxGistToken
-    if not token then return CurrentConfig end
-    pcall(function()
-        local filename = _gistFilename()
-        local gistId   = _findGistId(token, filename)
-        if not gistId then return end
-        local ok, res = pcall(_gistRequest, {
-            Url    = "https://api.github.com/gists/" .. gistId,
-            Method = "GET",
-            Headers = {
-                ["Authorization"] = "token " .. token,
-                ["Accept"]        = "application/vnd.github+json",
-                ["User-Agent"]    = "LynxScript",
-            },
-        })
-        if not ok or not res or not res.Body then return end
-        if res.Body:sub(1, 1) ~= "{" then return end
-        local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-        if not ok2 or type(parsed) ~= "table" then return end
-        local files = parsed.files
-        if type(files) ~= "table" or not files[filename] then return end
-        local raw = files[filename].content
-        if not raw or raw == "" then return end
-        local ok3, loaded = pcall(HttpService.JSONDecode, HttpService, raw)
-        if ok3 and type(loaded) == "table" then
-            MergeTables(CurrentConfig, loaded)
+    if isfile(CONFIG_FILE) then
+        local ok, err = pcall(function()
+            local raw = readfile(CONFIG_FILE)
+            if not raw or raw == "" then return end
+            local loaded = HttpService:JSONDecode(raw)
+            if type(loaded) == "table" then
+                MergeTables(CurrentConfig, loaded)
+            end
+        end)
+        if not ok then
+            pcall(function() delfile(CONFIG_FILE) end)
+            CurrentConfig = DeepCopy(DefaultConfig)
         end
-    end)
+    end
     return CurrentConfig
 end
 function Library.ConfigSystem.Get(path, default)
@@ -344,23 +232,9 @@ function Library.ConfigSystem.Reset()
     Library.ConfigSystem.Save()
 end
 function Library.ConfigSystem.Delete()
-    pcall(function()
-        local uid = tostring(Players.LocalPlayer.UserId)
-        local url = _G.LynxCloudURL
-        local secret = _G.LynxCloudSecret
-        if not url or not secret then return end
-        local doRequest = (syn and syn.request) or (http and http.request) or request
-        doRequest({
-            Url     = url,
-            Method  = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["X-Secret"]     = secret,
-                ["X-UID"]        = uid,
-            },
-            Body = "{}",
-        })
-    end)
+    if isfile(CONFIG_FILE) then
+        delfile(CONFIG_FILE)
+    end
 end
 local function MarkDirty()
     if _G.AutoSaveEnabled == false then return end
@@ -369,7 +243,7 @@ local function MarkDirty()
         pcall(function() task.cancel(Library._saveThread) end)
         Library._saveThread = nil
     end
-    Library._saveThread = task.delay(60, function()
+    Library._saveThread = task.delay(2, function()
         if not isDirty then
             Library._saveThread = nil
             return
