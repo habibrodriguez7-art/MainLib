@@ -1,4 +1,3 @@
---w
 local Library = {}
 Library.flags = {}
 Library.pages = {}
@@ -1317,7 +1316,9 @@ function Library:CreateCategory(parent, title, startOpen)
         if not categoryFrame or not categoryFrame.Parent then return end
         local h = sectionHeaderHeight
         if isOpen and contentContainer.Visible then
-            h = sectionHeaderHeight + contentListLayout.AbsoluteContentSize.Y
+            -- +6 accounts for the UIPadding PaddingBottom on contentContainer
+            -- so the bottom element is never clipped by the background frame.
+            h = sectionHeaderHeight + contentListLayout.AbsoluteContentSize.Y + 6
         end
         categoryFrame.Size = UDim2.new(1, 0, 0, h)
     end
