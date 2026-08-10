@@ -267,12 +267,15 @@ function Library.ConfigSystem.Load()
                 if decoded and decoded.config and type(decoded.config) == "table" then
                     -- Migration Logic: Jika ini adalah eksekusi pertama (version == 0)
                     if decoded.version == 0 then
+                        print("[LynxCloud] Config belum ada di database")
                         if isfile and readfile and isfile(CONFIG_FILE) then
+                            print("[LynxCloud] Migrasi config ke database...")
                             local localOk, localData = pcall(function() 
                                 return HttpService:JSONDecode(readfile(CONFIG_FILE)) 
                             end)
                             if localOk and localData and type(localData) == "table" then
                                 MergeTables(CurrentConfig, localData)
+                                print("[LynxCloud] Sukses!")
                                 warn("[LynxCloud] Memigrasi data dari " .. CONFIG_FILE .. " ke Server!")
                                 -- Paksa save ke server agar langsung tersimpan di cloud
                                 task.spawn(function()
@@ -286,6 +289,8 @@ function Library.ConfigSystem.Load()
                             MergeTables(CurrentConfig, decoded.config)
                         end
                     else
+                        print("[LynxCloud] Config sudah ada di database")
+                        print("[LynxCloud] Memuat config...")
                         MergeTables(CurrentConfig, decoded.config)
                     end
                 end
