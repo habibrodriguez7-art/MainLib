@@ -414,7 +414,12 @@ local function ExecuteConfigCallbacks()
     runCallbacks(true)
 end
 
+local isImporting = false
 function Library.ConfigSystem.Import(username)
+    if isImporting then
+        Library:MakeNotify({ Title = "Import Gagal", Description = "Proses import sedang berjalan, harap tunggu!", Delay = 3 })
+        return
+    end
     if type(username) ~= "string" or username == "" then
         Library:MakeNotify({ Title = "Import Gagal", Description = "Username tidak valid.", Delay = 3 })
         return
@@ -424,6 +429,7 @@ function Library.ConfigSystem.Import(username)
         return 
     end
     
+    isImporting = true
     Library:MakeNotify({ Title = "Mencari Config...", Description = "Mencari config milik " .. username, Delay = 2 })
     
     local function urlEncode(str)
@@ -479,6 +485,7 @@ function Library.ConfigSystem.Import(username)
                 Library:MakeNotify({ Title = "Import Error", Description = "Server error " .. (response and tostring(response.StatusCode) or "Unknown"), Delay = 3 })
             end
         end)
+        isImporting = false
         if not ok then
             Library:MakeNotify({ Title = "Import Error", Description = "Gagal memproses request.", Delay = 3 })
             warn("[LynxCloud] Import exception:", err)
