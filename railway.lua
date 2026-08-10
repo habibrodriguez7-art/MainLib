@@ -263,7 +263,12 @@ function Library.ConfigSystem.Load()
                 }
             })
             if response and response.StatusCode == 200 and response.Body then
-                local decoded = HttpService:JSONDecode(response.Body)
+                local jsonOk, decoded = pcall(function() return HttpService:JSONDecode(response.Body) end)
+                if not jsonOk then
+                    warn("[LynxCloud] Gagal decode JSON dari server:", response.Body)
+                    return
+                end
+                
                 if decoded and decoded.config and type(decoded.config) == "table" then
                     -- Migration Logic: Jika ini adalah eksekusi pertama (version == 0)
                     if decoded.version == 0 then
@@ -298,8 +303,14 @@ function Library.ConfigSystem.Load()
             elseif response and response.StatusCode == 404 then
                 -- 404 indicates no config found, which is a success for new users
                 Library._LoadSuccess = true
+            else
+                warn("[LynxCloud] Response Gagal - Status:", response and response.StatusCode or "N/A", "Body:", response and response.Body or "N/A")
             end
         end)
+        
+        if not ok then
+            warn("[LynxCloud] Internal Request Error:", err)
+        end
         
         if Library._LoadSuccess then break end
         warn("[LynxCloud] Load failed (Attempt " .. attempt .. "), retrying...")
