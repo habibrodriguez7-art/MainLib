@@ -2773,7 +2773,18 @@ local MainContainer = new("Frame", {
     AutomaticSize = Enum.AutomaticSize.XY
 })
 
+local PCContainer = new("Frame", {
+    Parent = Library.FeatureHUDManager.Gui,
+    Name = "PCContainer",
+    BackgroundTransparency = 1,
+    Position = UDim2.new(0, 15, 1, -15),
+    AnchorPoint = Vector2.new(0, 1),
+    Size = UDim2.new(0, 0, 0, 0),
+    AutomaticSize = Enum.AutomaticSize.XY
+})
+
 local hudScale = new("UIScale", {Parent = MainContainer})
+local pcScale = new("UIScale", {Parent = PCContainer})
 
 Library.FeatureHUDManager.baseScale = 1
 local function updateHUDScale()
@@ -2781,6 +2792,7 @@ local function updateHUDScale()
     local vSize = workspace.CurrentCamera.ViewportSize
     Library.FeatureHUDManager.baseScale = math.clamp(vSize.Y / 720, 0.6, 1.8)
     hudScale.Scale = Library.FeatureHUDManager.baseScale
+    pcScale.Scale = Library.FeatureHUDManager.baseScale
 end
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateHUDScale)
 updateHUDScale()
@@ -2791,6 +2803,15 @@ new("UIListLayout", {
     HorizontalAlignment = Enum.HorizontalAlignment.Right,
     SortOrder = Enum.SortOrder.LayoutOrder,
     Padding = UDim.new(0, 10)
+})
+
+new("UIListLayout", {
+    Parent = PCContainer,
+    FillDirection = Enum.FillDirection.Vertical,
+    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+    VerticalAlignment = Enum.VerticalAlignment.Bottom,
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    Padding = UDim.new(0, 8)
 })
 
 if _G.FeatureHUDConn then _G.FeatureHUDConn:Disconnect() end
@@ -2833,7 +2854,11 @@ function Library.FeatureHUDManager:GetRow()
     return lastRow
 end
 
-function Library.FeatureHUDManager:AddButton(text, clickCallback)
+function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
+    if not isMobile then
+        return self:AddPCIndicator(text, hotkeyString)
+    end
+    
     local row = self:GetRow()
     
     local container = new("Frame", {
@@ -2929,19 +2954,103 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback)
         btn.MouseButton1Click:Connect(clickCallback)
     end
     
-    table.insert(self.Buttons, container)
-    return container
+    local ref = {
+        isPC = false,
+        container = container,
+        UpdateHotkey = function(self, newHotkey) end
+    }
+    table.insert(self.Buttons, ref)
+    return ref
 end
 
-function Library.FeatureHUDManager:RemoveButton(container)
-    if not container then return end
+function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
+    local container = new("Frame", {
+        Parent = PCContainer,
+        Name = "PCIndicator_" .. text,
+        Size = UDim2.new(0, 0, 0, 24),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundColor3 = colors.bg1,
+        BorderSizePixel = 0,
+        LayoutOrder = #self.Buttons
+    })
+    
+    new("UIGradient", {
+        Parent = container,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.2),
+            NumberSequenceKeypoint.new(0.7, 0.5), 
+            NumberSequenceKeypoint.new(1, 1)
+        })
+    })
+
+    new("Frame", {
+        Parent = container,
+        Size = UDim2.new(0, 3, 1, 0),
+        BackgroundColor3 = colors.primary,
+        BorderSizePixel = 0
+    })
+
+    local label = new("TextLabel", {
+        Parent = container,
+        Size = UDim2.new(0, 0, 1, 0),
+        Position = UDim2.new(0, 12, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 13,
+        TextColor3 = colors.text,
+        RichText = true
+    })
+    
+    new("UIPadding", {
+        Parent = container,
+        PaddingRight = UDim.new(0, 40)
+    })
+
+    local ref = {
+        isPC = true,
+        container = container,
+        text = text,
+        label = label
+    }
+    
+    function ref:UpdateHotkey(newHotkey)
+        local hexColor = string.format("%02X%02X%02X", 
+            math.floor(colors.primary.R*255), 
+            math.floor(colors.primary.G*255), 
+            math.floor(colors.primary.B*255))
+        
+        local hkString = "None"
+        if newHotkey and tostring(newHotkey) ~= "" then
+            hkString = tostring(newHotkey)
+        end
+        self.label.Text = string.format("<font color='#%s'>[%s]</font>  %s", hexColor, hkString, self.text)
+    end
+    
+    ref:UpdateHotkey(hotkeyString)
+
+    table.insert(self.Buttons, ref)
+    return ref
+end
+
+function Library.FeatureHUDManager:RemoveButton(ref)
+    if not ref then return end
+    
+    local container = type(ref) == "table" and ref.container or ref
+
     for i, b in ipairs(self.Buttons) do
-        if b == container then
+        local bContainer = type(b) == "table" and b.container or b
+        if bContainer == container or b == ref then
             table.remove(self.Buttons, i)
             break
         end
     end
-    container:Destroy()
+    
+    if container and container.Parent then
+        container:Destroy()
+    end
+    
+    if not isMobile then return end
     
     local tempBtns = {}
     for _, b in ipairs(self.Buttons) do
@@ -2956,7 +3065,7 @@ function Library.FeatureHUDManager:RemoveButton(container)
     
     for _, b in ipairs(tempBtns) do
         local r = self:GetRow()
-        b.Parent = r
+        b.container.Parent = r
         table.insert(self.Buttons, b)
     end
 end
