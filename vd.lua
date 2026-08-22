@@ -2846,8 +2846,16 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback)
         BorderSizePixel = 0,
         LayoutOrder = #self.Buttons
     })
+    local overlay = new("Frame", {
+        Parent = container,
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 5
+    })
+    new("UICorner", {Parent = overlay, CornerRadius = UDim.new(0, 6)})
     
-    local btnScale = new("UIScale", {Parent = container})
     new("UICorner", {Parent = container, CornerRadius = UDim.new(0, 6)})
     
     local stroke = new("UIStroke", {
@@ -2907,11 +2915,11 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback)
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            TweenService:Create(btnScale, TweenInfo.new(0.1), {Scale = 0.92}):Play()
+            TweenService:Create(overlay, TweenInfo.new(0.1), {BackgroundTransparency = 0.5}):Play()
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
-                    TweenService:Create(btnScale, TweenInfo.new(0.1), {Scale = 1}):Play()
+                    TweenService:Create(overlay, TweenInfo.new(0.1), {BackgroundTransparency = 1}):Play()
                 end
             end)
         end
