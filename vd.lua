@@ -2777,8 +2777,8 @@ local PCContainer = new("Frame", {
     Parent = Library.FeatureHUDManager.Gui,
     Name = "PCContainer",
     BackgroundTransparency = 1,
-    Position = UDim2.new(0, 15, 1, -15),
-    AnchorPoint = Vector2.new(0, 1),
+    Position = UDim2.new(1, -15, 0, 15),
+    AnchorPoint = Vector2.new(1, 0),
     Size = UDim2.new(0, 0, 0, 0),
     AutomaticSize = Enum.AutomaticSize.XY
 })
@@ -2808,10 +2808,10 @@ new("UIListLayout", {
 new("UIListLayout", {
     Parent = PCContainer,
     FillDirection = Enum.FillDirection.Vertical,
-    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-    VerticalAlignment = Enum.VerticalAlignment.Bottom,
+    HorizontalAlignment = Enum.HorizontalAlignment.Right,
+    VerticalAlignment = Enum.VerticalAlignment.Top,
     SortOrder = Enum.SortOrder.LayoutOrder,
-    Padding = UDim.new(0, 8)
+    Padding = UDim.new(0, 4)
 })
 
 if _G.FeatureHUDConn then _G.FeatureHUDConn:Disconnect() end
@@ -2977,15 +2977,16 @@ function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
     new("UIGradient", {
         Parent = container,
         Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.2),
-            NumberSequenceKeypoint.new(0.7, 0.5), 
-            NumberSequenceKeypoint.new(1, 1)
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.3, 0.5), 
+            NumberSequenceKeypoint.new(1, 0.2)
         })
     })
 
     new("Frame", {
         Parent = container,
         Size = UDim2.new(0, 3, 1, 0),
+        Position = UDim2.new(1, -3, 0, 0),
         BackgroundColor3 = colors.primary,
         BorderSizePixel = 0
     })
@@ -3004,7 +3005,8 @@ function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
     
     new("UIPadding", {
         Parent = container,
-        PaddingRight = UDim.new(0, 40)
+        PaddingLeft = UDim.new(0, 40),
+        PaddingRight = UDim.new(0, 12)
     })
 
     local ref = {
