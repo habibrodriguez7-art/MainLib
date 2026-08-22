@@ -2983,30 +2983,45 @@ function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
         })
     })
 
+    new("UIListLayout", {
+        Parent = container,
+        FillDirection = Enum.FillDirection.Horizontal,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder
+    })
+
     new("Frame", {
         Parent = container,
-        Size = UDim2.new(0, 3, 1, 0),
-        Position = UDim2.new(1, -3, 0, 0),
-        BackgroundColor3 = colors.primary,
-        BorderSizePixel = 0
+        Size = UDim2.new(0, 40, 1, 0),
+        BackgroundTransparency = 1,
+        LayoutOrder = 1
     })
 
     local label = new("TextLabel", {
         Parent = container,
         Size = UDim2.new(0, 0, 1, 0),
-        Position = UDim2.new(0, 12, 0, 0),
         AutomaticSize = Enum.AutomaticSize.X,
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamMedium,
         TextSize = 13,
         TextColor3 = colors.text,
-        RichText = true
+        RichText = true,
+        LayoutOrder = 2
     })
     
-    new("UIPadding", {
+    new("Frame", {
         Parent = container,
-        PaddingLeft = UDim.new(0, 40),
-        PaddingRight = UDim.new(0, 12)
+        Size = UDim2.new(0, 12, 1, 0),
+        BackgroundTransparency = 1,
+        LayoutOrder = 3
+    })
+
+    new("Frame", {
+        Parent = container,
+        Size = UDim2.new(0, 3, 1, 0),
+        BackgroundColor3 = colors.primary,
+        BorderSizePixel = 0,
+        LayoutOrder = 4
     })
 
     local ref = {
