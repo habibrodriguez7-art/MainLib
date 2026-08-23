@@ -1277,7 +1277,7 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
     if isLocked then
         new("ImageLabel", {
             Parent = header,
-            Image = "rbxassetid://99886116278459",
+            Image = "rbxassetid://91807786360605",
             Size = UDim2.new(0, 14, 0, 14),
             Position = UDim2.new(1, -44, 0.5, -7),
             BackgroundTransparency = 1,
@@ -1328,7 +1328,7 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
         })
         new("ImageLabel", {
             Parent = lockedMsgFrame,
-            Image = "rbxassetid://99886116278459",
+            Image = "rbxassetid://91807786360605",
             Size = UDim2.new(0, 36, 0, 36),
             Position = UDim2.new(0.5, -18, 0, 15),
             BackgroundTransparency = 1,
