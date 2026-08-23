@@ -1264,13 +1264,18 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
         TextColor3 = colors.primary,
         ZIndex = 8
     })
-    local contentContainer = new("Frame", {
+    local contentWrapper = new("Frame", {
         Parent = categoryFrame,
         Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
         LayoutOrder = 2,
         BackgroundTransparency = 1,
         Visible = startOpen,
+        ZIndex = 7
+    })
+    local contentContainer = new("Frame", {
+        Parent = contentWrapper,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
         ZIndex = 7
     })
     
@@ -1297,14 +1302,17 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
     local function updateCategoryHeight()
         if not categoryFrame or not categoryFrame.Parent then return end
         local h = sectionHeaderHeight
-        if isOpen and contentContainer.Visible then
-            h = sectionHeaderHeight + contentListLayout.AbsoluteContentSize.Y + 6
+        local contentH = 0
+        if isOpen and contentWrapper.Visible then
+            contentH = contentListLayout.AbsoluteContentSize.Y + 6
+            h = sectionHeaderHeight + contentH
         end
         categoryFrame.Size = UDim2.new(1, 0, 0, h)
+        contentWrapper.Size = UDim2.new(1, 0, 0, contentH)
     end
     local function setOpen(state)
         isOpen = state
-        contentContainer.Visible = isOpen
+        contentWrapper.Visible = isOpen
         arrow.Rotation = isOpen and 180 or 0
         updateCategoryHeight()
     end
@@ -1319,33 +1327,36 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
     local returnedContainer = contentContainer
     
     if isLocked then
-        returnedContainer = new("Frame", {Visible = false})
-        local lockedMsgFrame = new("Frame", {
-            Parent = contentContainer,
-            Size = UDim2.new(1, 0, 0, 85),
-            BackgroundTransparency = 1,
-            ZIndex = 7
+        local blocker = new("TextButton", {
+            Parent = contentWrapper,
+            Size = UDim2.new(1, 0, 1, 0),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundTransparency = 0.25,
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            Text = "",
+            AutoButtonColor = false,
+            ZIndex = 20
         })
         new("ImageLabel", {
-            Parent = lockedMsgFrame,
+            Parent = blocker,
             Image = "rbxassetid://91807786360605",
             Size = UDim2.new(0, 36, 0, 36),
-            Position = UDim2.new(0.5, -18, 0, 15),
+            Position = UDim2.new(0.5, -18, 0.5, -28),
             BackgroundTransparency = 1,
             ImageColor3 = colors.primary,
-            ZIndex = 8
+            ZIndex = 21
         })
         new("TextLabel", {
-            Parent = lockedMsgFrame,
+            Parent = blocker,
             Text = "Buy Premium to unlock this feature",
             Size = UDim2.new(1, 0, 0, 20),
-            Position = UDim2.new(0, 0, 0, 58),
+            Position = UDim2.new(0, 0, 0.5, 12),
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamBold,
             TextSize = fontSize.small,
-            TextColor3 = colors.textDim,
+            TextColor3 = colors.text,
             TextXAlignment = Enum.TextXAlignment.Center,
-            ZIndex = 8
+            ZIndex = 21
         })
     end
     
