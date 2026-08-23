@@ -3122,7 +3122,10 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
     local ref = {
         isPC = false,
         container = container,
-        UpdateHotkey = function(self, newHotkey) end
+        UpdateHotkey = function(self, newHotkey) end,
+        UpdateText = function(self, newText)
+            if label then label.Text = tostring(newText) end
+        end
     }
     table.insert(self.Buttons, ref)
     return ref
@@ -3193,7 +3196,8 @@ function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
         isPC = true,
         container = container,
         text = text,
-        label = label
+        label = label,
+        hotkey = hotkeyString or "None"
     }
     
     function ref:UpdateHotkey(newHotkey)
@@ -3202,11 +3206,13 @@ function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
             math.floor(colors.primary.G*255), 
             math.floor(colors.primary.B*255))
         
-        local hkString = "None"
-        if newHotkey and tostring(newHotkey) ~= "" then
-            hkString = tostring(newHotkey)
-        end
-        self.label.Text = string.format("<font color='#%s'>[%s]</font>  %s", hexColor, hkString, self.text)
+        self.hotkey = (newHotkey and tostring(newHotkey) ~= "") and tostring(newHotkey) or "None"
+        self.label.Text = string.format("<font color='#%s'>[%s]</font>  %s", hexColor, self.hotkey, self.text)
+    end
+    
+    function ref:UpdateText(newText)
+        self.text = tostring(newText)
+        self:UpdateHotkey(self.hotkey)
     end
     
     ref:UpdateHotkey(hotkeyString)
