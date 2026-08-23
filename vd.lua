@@ -1305,6 +1305,9 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
         local contentH = 0
         if isOpen and contentWrapper.Visible then
             contentH = contentListLayout.AbsoluteContentSize.Y + 6
+            if isLocked and contentH < 80 then
+                contentH = 80
+            end
             h = sectionHeaderHeight + contentH
         end
         categoryFrame.Size = UDim2.new(1, 0, 0, h)
@@ -1331,7 +1334,7 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
             Parent = contentWrapper,
             Size = UDim2.new(1, 0, 1, 0),
             Position = UDim2.new(0, 0, 0, 0),
-            BackgroundTransparency = 0.25,
+            BackgroundTransparency = 1,
             BackgroundColor3 = Color3.new(0, 0, 0),
             Text = "",
             AutoButtonColor = false,
@@ -1340,8 +1343,8 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
         new("ImageLabel", {
             Parent = blocker,
             Image = "rbxassetid://91807786360605",
-            Size = UDim2.new(0, 36, 0, 36),
-            Position = UDim2.new(0.5, -18, 0.5, -28),
+            Size = UDim2.new(0, 32, 0, 32),
+            Position = UDim2.new(0.5, -16, 0.5, -24),
             BackgroundTransparency = 1,
             ImageColor3 = colors.primary,
             ZIndex = 21
