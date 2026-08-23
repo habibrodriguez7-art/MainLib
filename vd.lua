@@ -27,18 +27,18 @@ local RunService      = game:GetService("RunService")
 local HttpService     = game:GetService("HttpService")
 local localPlayer     = Players.LocalPlayer
 local colors = {
-    primary = Color3.fromRGB(255, 115, 0),     -- Vibrant Neon Orange (Primary)
-    secondary = Color3.fromRGB(255, 150, 30),  -- Lighter Amber
-    accent = Color3.fromRGB(255, 175, 70),     -- Accent Gold/Orange
-    success = Color3.fromRGB(34, 197, 94),     -- Green (Keep success)
-    bg1 = Color3.fromRGB(28, 25, 23),          -- Warm Dark Gray (Abu-abu gelap ke-orange)
-    bg2 = Color3.fromRGB(36, 32, 29),          -- Elevated surface
-    bg3 = Color3.fromRGB(48, 42, 38),          -- Higher elevated surface
-    bg4 = Color3.fromRGB(60, 52, 47),          -- Highest elevated
-    text = Color3.fromRGB(245, 240, 235),      -- Off-white (Warm)
-    textDim = Color3.fromRGB(190, 180, 175),   -- Muted text
-    textDimmer = Color3.fromRGB(140, 130, 125),-- Very muted text
-    border = Color3.fromRGB(70, 60, 55),       -- Warm border
+    primary = Color3.fromRGB(255, 140, 0),     -- FreemiumLib Orange (255, 140, 0)
+    secondary = Color3.fromRGB(255, 160, 50),
+    accent = Color3.fromRGB(255, 180, 80),
+    success = Color3.fromRGB(34, 197, 94),
+    bg1 = Color3.fromRGB(29, 30, 35),          -- FreemiumLib exact background
+    bg2 = Color3.fromRGB(36, 37, 43),          -- Elevated
+    bg3 = Color3.fromRGB(44, 45, 52),
+    bg4 = Color3.fromRGB(52, 53, 62),
+    text = Color3.fromRGB(255, 255, 255),      -- FreemiumLib exact text color
+    textDim = Color3.fromRGB(200, 200, 200),
+    textDimmer = Color3.fromRGB(150, 150, 150),
+    border = Color3.fromRGB(29, 30, 35),       -- FreemiumLib border
 }
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
@@ -2302,10 +2302,10 @@ function Library:MakeNotify(config)
     end
     local notif = new("Frame", {
         Parent = self._gui,
-        Size = UDim2.new(0, 280, 0, 0),
+        Size = UDim2.new(0, 0, 0, 0),
         Position = UDim2.new(1, -20, 1, -20),
         AnchorPoint = Vector2.new(1, 1),
-        AutomaticSize = Enum.AutomaticSize.Y,
+        AutomaticSize = Enum.AutomaticSize.XY,
         BackgroundColor3 = colors.bg1,
         BorderSizePixel = 0,
         ZIndex = 200
@@ -2331,9 +2331,9 @@ function Library:MakeNotify(config)
 
     local textContainer = new("Frame", {
         Parent = notif,
-        Size = UDim2.new(1, -15, 0, 0),
+        Size = UDim2.new(0, 0, 0, 0),
         Position = UDim2.new(0, 15, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
+        AutomaticSize = Enum.AutomaticSize.XY,
         BackgroundTransparency = 1,
         ZIndex = 201
     })
@@ -2342,7 +2342,7 @@ function Library:MakeNotify(config)
         Parent = textContainer,
         PaddingTop = UDim.new(0, 10),
         PaddingBottom = UDim.new(0, 10),
-        PaddingRight = UDim.new(0, 35)
+        PaddingRight = UDim.new(0, 15) -- Reduced right padding for tighter shrink-wrap
     })
 
     new("UIListLayout", {
@@ -2353,11 +2353,11 @@ function Library:MakeNotify(config)
     })
 
     if title and title ~= "" then
-        new("TextLabel", {
+        local tLbl = new("TextLabel", {
             Parent = textContainer,
             Text = title,
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
+            Size = UDim2.new(0, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.XY,
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamBold,
             TextSize = 13,
@@ -2367,14 +2367,15 @@ function Library:MakeNotify(config)
             LayoutOrder = 1,
             ZIndex = 201
         })
+        new("UISizeConstraint", { Parent = tLbl, MaxSize = Vector2.new(240, 9999) })
     end
     
     if desc and desc ~= "" then
-        new("TextLabel", {
+        local dLbl = new("TextLabel", {
             Parent = textContainer,
             Text = desc,
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
+            Size = UDim2.new(0, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.XY,
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
@@ -2384,14 +2385,15 @@ function Library:MakeNotify(config)
             LayoutOrder = 2,
             ZIndex = 201
         })
+        new("UISizeConstraint", { Parent = dLbl, MaxSize = Vector2.new(240, 9999) })
     end
 
     if content and content ~= "" then
-        new("TextLabel", {
+        local cLbl = new("TextLabel", {
             Parent = textContainer,
             Text = content,
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
+            Size = UDim2.new(0, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.XY,
             BackgroundTransparency = 1,
             Font = Enum.Font.Gotham,
             TextSize = 11,
@@ -2401,6 +2403,7 @@ function Library:MakeNotify(config)
             LayoutOrder = 3,
             ZIndex = 201
         })
+        new("UISizeConstraint", { Parent = cLbl, MaxSize = Vector2.new(240, 9999) })
     end
     task.delay(delay, function()
         pcall(function()
