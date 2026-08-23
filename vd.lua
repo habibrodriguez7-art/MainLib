@@ -27,18 +27,18 @@ local RunService      = game:GetService("RunService")
 local HttpService     = game:GetService("HttpService")
 local localPlayer     = Players.LocalPlayer
 local colors = {
-    primary = Color3.fromRGB(255, 140, 0),     -- FreemiumLib Orange (255, 140, 0)
-    secondary = Color3.fromRGB(255, 160, 50),
-    accent = Color3.fromRGB(255, 180, 80),
+    primary = Color3.fromRGB(255, 136, 0), -- Orange
+    secondary = Color3.fromRGB(255, 180, 50),
+    accent = Color3.fromRGB(255, 200, 100),
     success = Color3.fromRGB(34, 197, 94),
-    bg1 = Color3.fromRGB(29, 30, 35),          -- FreemiumLib exact background
-    bg2 = Color3.fromRGB(36, 37, 43),          -- Elevated
-    bg3 = Color3.fromRGB(44, 45, 52),
-    bg4 = Color3.fromRGB(52, 53, 62),
-    text = Color3.fromRGB(255, 255, 255),      -- FreemiumLib exact text color
-    textDim = Color3.fromRGB(200, 200, 200),
-    textDimmer = Color3.fromRGB(150, 150, 150),
-    border = Color3.fromRGB(29, 30, 35),       -- FreemiumLib border
+    bg1 = Color3.fromRGB(15, 10, 5),     -- Dark brown/orange tint
+    bg2 = Color3.fromRGB(25, 16, 8),
+    bg3 = Color3.fromRGB(40, 25, 12),
+    bg4 = Color3.fromRGB(55, 35, 18),
+    text = Color3.fromRGB(255, 250, 245),
+    textDim = Color3.fromRGB(220, 205, 190),
+    textDimmer = Color3.fromRGB(175, 150, 135),
+    border = Color3.fromRGB(80, 50, 25),
 }
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
@@ -743,19 +743,6 @@ function Library:CreateWindow(config)
     local dragging, dragStart, startPos = false, nil, nil
     local resizing = false
     local resizeStartPos, resizeStartSize = nil, nil
-    -- Drag/resize EVENT-DRIVEN murni: Position/Size ditulis HANYA saat input
-    -- bener-baker berubah (InputChanged), bukan tiap render frame. Tidak ada
-    -- RenderStepped, lerp, atau loop per-frame apa pun -> yang paling ringan
-    -- secara engine. Setiap perubahan Position memicu engine re-layout UI tree
-    -- descendant, jadi minimalkan jumlah tulis = FPS paling stabil.
-    -- (Note: transparansi dipertahankan permanen -- terbukti BUKAN penyebab
-    -- FPS drop; penyebabnya adalah render invalidation per-property-change.)
-    local win = self._win
-    -- Threshold delta: di Delta mobile, InputChanged sering fire dengan posisi
-    -- sub-pixel yang nyaris sama (noise touch). Tiap write Position/Size = engine
-    -- re-layout seluruh descendant UI -> mahal. Skip write kalau gerakan <1px
-    -- dari posisi terakhir yang ditulis -> hemat refresh sia-sia, nol perubahan
-    -- visual. lastX/lastY cache posisi terakhir biar gak baca win.Position tiap event.
     local lastX, lastY = nil, nil
     local function onMove(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
@@ -794,21 +781,18 @@ function Library:CreateWindow(config)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             bringToFront()
             dragging, dragStart, startPos = true, input.Position, self._win.Position
-            lastX, lastY = nil, nil -- reset threshold cache per sesi drag
+            lastX, lastY = nil, nil 
             ensureMoveConn()
         end
     end))
     self:AddConnection("resizeDragStart", resizeHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             resizing, resizeStartPos, resizeStartSize = true, input.Position, self._win.Size
-            lastX, lastY = nil, nil -- reset threshold cache per sesi resize
+            lastX, lastY = nil, nil 
             ensureMoveConn()
         end
     end))
     self:AddConnection("inputEnded", UserInputService.InputEnded:Connect(function(input)
-        -- InputEnded fires pada setiap input globally. Saat tidak ada drag/resize
-        -- aktif, tidak ada yang harus dilakukan -- keluar lebih awal supaya tidak
-        -- menjalankan dua assignment + pemanggilan fungsi untuk setiap input idle.
         if not dragging and not resizing then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
@@ -939,10 +923,6 @@ function Library:_createSearchBar()
         Visible = false,
         ZIndex = 62
     })
-    -- Pool of result rows: reused across searches instead of being destroyed and
-    -- rebuilt on every keystroke. Unused rows are just hidden (UIListLayout skips
-    -- invisible siblings), which avoids instance churn / GC pressure on low-end
-    -- and mobile devices.
     local rowPool = {}
     local searchThread = nil
     local function highlightFeature(frame)
@@ -1094,8 +1074,6 @@ function Library:_createSearchBar()
         resultsPanel.Size = UDim2.new(0, searchW, 0, panelH)
         resultsPanel.Visible = true
     end
-    -- Debounce: rebuild results only after typing pauses briefly, so holding/
-    -- spamming keys on a low-end device doesn't rebuild the list every keystroke.
     self:AddConnection("searchTextChanged", searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         local text = searchBox.Text
         if searchThread then
@@ -1304,45 +1282,28 @@ function Library:CreateCategory(parent, title, startOpen)
     local contentListLayout = new("UIListLayout", {Parent = contentContainer, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder})
     local isOpen = startOpen
     arrow.Rotation = startOpen and 180 or 0
-
-    -- Background the section frame manually instead of relying on AutomaticSize.
-    -- A Frame whose height is driven by AutomaticSize inside a ScrollingFrame
-    -- does not reliably repaint its background when a child's Visible toggles,
-    -- so the section bg only appears after a scroll/layout pass is forced. We
-    -- compute the height from the content list's AbsoluteContentSize and update
-    -- it on content change and on open/close, which keeps the bg correct at all
-    -- times without needing the user to scroll first.
     local function updateCategoryHeight()
         if not categoryFrame or not categoryFrame.Parent then return end
         local h = sectionHeaderHeight
         if isOpen and contentContainer.Visible then
-            -- +6 accounts for the UIPadding PaddingBottom on contentContainer
-            -- so the bottom element is never clipped by the background frame.
             h = sectionHeaderHeight + contentListLayout.AbsoluteContentSize.Y + 6
         end
         categoryFrame.Size = UDim2.new(1, 0, 0, h)
     end
-
     local function setOpen(state)
         isOpen = state
         contentContainer.Visible = isOpen
         arrow.Rotation = isOpen and 180 or 0
         updateCategoryHeight()
     end
-
     contentListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCategoryHeight)
-    -- Defer once so the initial size is set after the layout settles, covering
-    -- any content that was added before this connect fired.
     task.defer(updateCategoryHeight)
-
     header.MouseButton1Click:Connect(function()
         setOpen(not isOpen)
     end)
-
     local function expand()
         if not isOpen then setOpen(true) end
     end
-
     return contentContainer, expand
 end
 function Library:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
@@ -2103,10 +2064,8 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         ZIndex = 9
     })
     local function resolveValue(text)
-        -- Don't convert long numbers (like Discord IDs) to number type
-        -- Lua numbers lose precision for IDs longer than 15 digits
         if type(text) == "string" and #text > 15 and text:match("^%d+$") then
-            return text  -- Keep as string for long numeric IDs
+            return text
         end
         local num = tonumber(text)
         return num or text
@@ -2230,11 +2189,6 @@ function Library:CreateButton(parent, label, callback)
         Font = Enum.Font.GothamBold,
         TextSize = fontSize.normal,
         TextColor3 = colors.text,
-        -- AutoButtonColor (API lama/universal) otomatis menggelapkan tombol saat
-        -- ditekan, jadi tidak butuh 3 connection Lua (Down/Up/Leave) hanya untuk
-        -- feedback warna. Warna dipindah dari btnFrame ke button supaya efek
-        -- tekan benar-benar terlihat. (AutoButtonColorProperties tidak dipakai
-        -- karena belum didukung semua executor.)
         AutoButtonColor = true,
         ZIndex = 9
     })
@@ -2246,14 +2200,12 @@ function Library:CreateButton(parent, label, callback)
         if isClicking then return end
         isClicking = true
 
-        -- Jalankan callback di thread terpisah agar tidak membekukan UI
         if callback then
             task.spawn(function()
                 pcall(callback)
             end)
         end
 
-        -- Anti-spam klik cepat
         task.delay(0.1, function()
             isClicking = false
         end)
@@ -2342,7 +2294,7 @@ function Library:MakeNotify(config)
         Parent = textContainer,
         PaddingTop = UDim.new(0, 10),
         PaddingBottom = UDim.new(0, 10),
-        PaddingRight = UDim.new(0, 15) -- Reduced right padding for tighter shrink-wrap
+        PaddingRight = UDim.new(0, 15)
     })
 
     new("UIListLayout", {
@@ -2440,9 +2392,6 @@ function Library:_createConfigTab(WindowObject)
     })
 
     local mgmtSection = configTab:AddSection("Config Management")
-    -- Warna tombol sekarang disimpan di child TextButton (lihat CreateButton),
-    -- bukan di frame-nya. Helper ini menargetkan child tsb saat ganti warna
-    -- konfirmasi reset/delete.
     local function setBtnColor(frame, color)
         local btn = frame:FindFirstChildWhichIsA("TextButton")
         if btn then btn.BackgroundColor3 = color end
@@ -2785,12 +2734,7 @@ function Library:Window(config)
                         if tostring(val) == "None" then return end
                         local k = parseKeyString(val)
                         if k then
-                            -- Format the HUD string precisely. 
-                            -- If val is a known KeyCode name like 'LeftShift', map it to 'LSHIFT' for shorter display, 
-                            -- or simply use `val` if it's a short 1-length string. 
-                            -- Alternatively, we can let user see the uppercase original input.
                             local hotkeyStr = string.upper(tostring(val))
-                            -- Shorten some keys for HUD
                             if hotkeyStr == "LEFTSHIFT" then hotkeyStr = "LSHIFT" end
                             if hotkeyStr == "RIGHTSHIFT" then hotkeyStr = "RSHIFT" end
                             if hotkeyStr == "LEFTCONTROL" then hotkeyStr = "LCTRL" end
@@ -2888,10 +2832,6 @@ function Library:Window(config)
                     ZIndex = 8
                 })
 
-                -- Tinggi label dihitung manual dari TextBounds. AutomaticSize.Y + 
-                -- TextWrapped terbukti rapuh: sebelum wrap-width terukur, lebar
-                -- kolaps ~1 karakter sehingga teks memanjang 1 huruf per baris.
-                -- Reflow ini hanya jalan saat create/SetText, bukan hotspot per-frame.
                 local reflowPending = false
                 local function reflow()
                     if reflowPending then return end
