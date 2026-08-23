@@ -27,18 +27,18 @@ local RunService      = game:GetService("RunService")
 local HttpService     = game:GetService("HttpService")
 local localPlayer     = Players.LocalPlayer
 local colors = {
-    primary = Color3.fromRGB(255, 136, 0), -- Orange
-    secondary = Color3.fromRGB(255, 180, 50),
-    accent = Color3.fromRGB(255, 200, 100),
-    success = Color3.fromRGB(34, 197, 94),
-    bg1 = Color3.fromRGB(15, 10, 5),     -- Dark brown/orange tint
-    bg2 = Color3.fromRGB(25, 16, 8),
-    bg3 = Color3.fromRGB(40, 25, 12),
-    bg4 = Color3.fromRGB(55, 35, 18),
-    text = Color3.fromRGB(255, 250, 245),
-    textDim = Color3.fromRGB(220, 205, 190),
-    textDimmer = Color3.fromRGB(175, 150, 135),
-    border = Color3.fromRGB(80, 50, 25),
+    primary = Color3.fromRGB(255, 115, 0),     -- Vibrant Neon Orange (Primary)
+    secondary = Color3.fromRGB(255, 150, 30),  -- Lighter Amber
+    accent = Color3.fromRGB(255, 175, 70),     -- Accent Gold/Orange
+    success = Color3.fromRGB(34, 197, 94),     -- Green (Keep success)
+    bg1 = Color3.fromRGB(16, 16, 20),          -- Sleek Onyx Black (Very dark cool gray)
+    bg2 = Color3.fromRGB(24, 24, 28),          -- Elevated surface
+    bg3 = Color3.fromRGB(34, 34, 38),          -- Higher elevated surface
+    bg4 = Color3.fromRGB(46, 46, 52),          -- Highest elevated surface
+    text = Color3.fromRGB(245, 245, 250),      -- Crisp white
+    textDim = Color3.fromRGB(185, 185, 195),   -- Muted text
+    textDimmer = Color3.fromRGB(135, 135, 145),-- Very muted text
+    border = Color3.fromRGB(45, 45, 52),       -- Clean dark border
 }
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
