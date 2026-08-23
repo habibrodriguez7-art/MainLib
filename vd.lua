@@ -2979,20 +2979,10 @@ new("UIListLayout", {
     Padding = UDim.new(0, 4)
 })
 
-if _G.FeatureHUDConn then _G.FeatureHUDConn:Disconnect() end
-_G.FeatureHUDConn = RunService.RenderStepped:Connect(function()
-    if not Library.FeatureHUDManager.Gui or not Library.FeatureHUDManager.Gui.Parent then 
-        if _G.FeatureHUDConn then _G.FeatureHUDConn:Disconnect(); _G.FeatureHUDConn = nil end
-        return 
-    end
-    local tName = localPlayer.Team and localPlayer.Team.Name or ""
-    local lowerT = string.lower(tName)
-    if lowerT == "survivors" or lowerT == "survivor" then
-        Library.FeatureHUDManager.Gui.Enabled = true
-    else
-        Library.FeatureHUDManager.Gui.Enabled = false
-    end
-end)
+if _G.FeatureHUDConn then 
+    _G.FeatureHUDConn:Disconnect() 
+    _G.FeatureHUDConn = nil 
+end
 
 function Library.FeatureHUDManager:GetRow()
     local rowCount = #self.Rows
