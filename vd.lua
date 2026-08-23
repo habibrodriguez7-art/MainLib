@@ -2193,12 +2193,6 @@ function Library:CreateButton(parent, label, callback)
         ZIndex = 9
     })
     new("UICorner", {Parent = button, CornerRadius = UDim.new(0, 5)})
-    new("UIStroke", {
-        Parent = button,
-        Color = colors.border,
-        Thickness = 1,
-        Transparency = 0.3
-    })
 
     local isClicking = false
 
