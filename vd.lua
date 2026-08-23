@@ -1214,7 +1214,7 @@ function Library:_switchPage(pageName)
     end
     self._currentPage = pageName
 end
-function Library:CreateCategory(parent, title, startOpen)
+function Library:CreateCategory(parent, title, startOpen, isLocked)
     startOpen = startOpen == true
     local categoryFrame = new("Frame", {
         Parent = parent,
@@ -1273,6 +1273,18 @@ function Library:CreateCategory(parent, title, startOpen)
         Visible = startOpen,
         ZIndex = 7
     })
+    
+    if isLocked then
+        new("ImageLabel", {
+            Parent = header,
+            Image = "rbxassetid://99886116278459",
+            Size = UDim2.new(0, 14, 0, 14),
+            Position = UDim2.new(1, -44, 0.5, -7),
+            BackgroundTransparency = 1,
+            ImageColor3 = colors.textDim,
+            ZIndex = 8
+        })
+    end
     new("UIPadding", {
         Parent = contentContainer,
         PaddingLeft = UDim.new(0, 10),
@@ -1304,7 +1316,40 @@ function Library:CreateCategory(parent, title, startOpen)
     local function expand()
         if not isOpen then setOpen(true) end
     end
-    return contentContainer, expand
+    local returnedContainer = contentContainer
+    
+    if isLocked then
+        returnedContainer = new("Frame", {Visible = false})
+        local lockedMsgFrame = new("Frame", {
+            Parent = contentContainer,
+            Size = UDim2.new(1, 0, 0, 85),
+            BackgroundTransparency = 1,
+            ZIndex = 7
+        })
+        new("ImageLabel", {
+            Parent = lockedMsgFrame,
+            Image = "rbxassetid://99886116278459",
+            Size = UDim2.new(0, 36, 0, 36),
+            Position = UDim2.new(0.5, -18, 0, 15),
+            BackgroundTransparency = 1,
+            ImageColor3 = colors.primary,
+            ZIndex = 8
+        })
+        new("TextLabel", {
+            Parent = lockedMsgFrame,
+            Text = "Buy Premium to unlock this feature",
+            Size = UDim2.new(1, 0, 0, 20),
+            Position = UDim2.new(0, 0, 0, 58),
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamBold,
+            TextSize = fontSize.small,
+            TextColor3 = colors.textDim,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 8
+        })
+    end
+    
+    return returnedContainer, expand
 end
 function Library:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
     local frame = new("Frame", {Parent = parent, Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, ZIndex = 7})
@@ -2557,9 +2602,9 @@ function Library:Window(config)
         TabObject._page      = page
         TabObject._library   = self._library
         TabObject._sections  = {}
-        function TabObject:AddSection(sectionTitle, isOpen)
+        function TabObject:AddSection(sectionTitle, isOpen, isLocked)
             sectionTitle = sectionTitle or "Section"
-            local category, sectionExpand = self._library:CreateCategory(self._page, sectionTitle, isOpen)
+            local category, sectionExpand = self._library:CreateCategory(self._page, sectionTitle, isOpen, isLocked)
             local SectionObject = {}
             SectionObject._container  = category
             SectionObject._library    = self._library
