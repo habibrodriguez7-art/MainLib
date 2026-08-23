@@ -31,14 +31,14 @@ local colors = {
     secondary = Color3.fromRGB(255, 150, 30),  -- Lighter Amber
     accent = Color3.fromRGB(255, 175, 70),     -- Accent Gold/Orange
     success = Color3.fromRGB(34, 197, 94),     -- Green (Keep success)
-    bg1 = Color3.fromRGB(16, 16, 20),          -- Sleek Onyx Black (Very dark cool gray)
-    bg2 = Color3.fromRGB(24, 24, 28),          -- Elevated surface
-    bg3 = Color3.fromRGB(34, 34, 38),          -- Higher elevated surface
-    bg4 = Color3.fromRGB(46, 46, 52),          -- Highest elevated surface
-    text = Color3.fromRGB(245, 245, 250),      -- Crisp white
-    textDim = Color3.fromRGB(185, 185, 195),   -- Muted text
-    textDimmer = Color3.fromRGB(135, 135, 145),-- Very muted text
-    border = Color3.fromRGB(45, 45, 52),       -- Clean dark border
+    bg1 = Color3.fromRGB(245, 235, 225),       -- White-orange / Warm light gray
+    bg2 = Color3.fromRGB(235, 220, 210),       -- Slightly darker warm gray
+    bg3 = Color3.fromRGB(220, 205, 195),       -- Elevated warm gray
+    bg4 = Color3.fromRGB(205, 190, 180),       -- Highest elevated
+    text = Color3.fromRGB(35, 25, 15),         -- Dark text for light background
+    textDim = Color3.fromRGB(100, 85, 75),     -- Muted dark text
+    textDimmer = Color3.fromRGB(150, 135, 125),-- Very muted text
+    border = Color3.fromRGB(215, 200, 190),    -- Light orange-gray border
 }
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
@@ -2303,7 +2303,7 @@ function Library:MakeNotify(config)
     local notif = new("Frame", {
         Parent = self._gui,
         Size = UDim2.new(0, 0, 0, 0),
-        Position = UDim2.new(1, -20, 1, -75), -- Keep bottom offset similar but flush right
+        Position = UDim2.new(1, -20, 1, -20),
         AnchorPoint = Vector2.new(1, 1),
         AutomaticSize = Enum.AutomaticSize.XY,
         BackgroundColor3 = colors.bg1,
@@ -2311,6 +2311,11 @@ function Library:MakeNotify(config)
         ZIndex = 200
     })
     table.insert(self._activeNotifs, notif)
+    
+    new("UISizeConstraint", {
+        Parent = notif,
+        MaxSize = Vector2.new(320, 9999)
+    })
     
     new("UIGradient", {
         Parent = notif,
@@ -2356,13 +2361,14 @@ function Library:MakeNotify(config)
         new("TextLabel", {
             Parent = textContainer,
             Text = title,
-            Size = UDim2.new(0, 0, 0, 14),
-            AutomaticSize = Enum.AutomaticSize.X,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamBold,
             TextSize = 13,
             TextColor3 = color,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true,
             LayoutOrder = 1,
             ZIndex = 201
         })
@@ -2372,13 +2378,14 @@ function Library:MakeNotify(config)
         new("TextLabel", {
             Parent = textContainer,
             Text = desc,
-            Size = UDim2.new(0, 0, 0, 12),
-            AutomaticSize = Enum.AutomaticSize.X,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
             TextColor3 = colors.text,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true,
             LayoutOrder = 2,
             ZIndex = 201
         })
@@ -2388,13 +2395,14 @@ function Library:MakeNotify(config)
         new("TextLabel", {
             Parent = textContainer,
             Text = content,
-            Size = UDim2.new(0, 0, 0, 12),
-            AutomaticSize = Enum.AutomaticSize.X,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundTransparency = 1,
             Font = Enum.Font.Gotham,
             TextSize = 11,
             TextColor3 = colors.textDim,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true,
             LayoutOrder = 3,
             ZIndex = 201
         })
