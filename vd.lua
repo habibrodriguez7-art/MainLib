@@ -2129,6 +2129,89 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
     end
     return frame
 end
+
+function Library:CreateBind(parent, label, configPath, defaultValue, callback)
+    local frame = new("Frame", {Parent = parent, Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, ZIndex = 7})
+    new("TextLabel", {
+        Parent = frame,
+        Text = label,
+        Size = UDim2.new(0.52, 0, 1, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = colors.text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Font = Enum.Font.GothamBold,
+        TextSize = fontSize.small,
+        ZIndex = 8
+    })
+    local btnBg = new("Frame", {
+        Parent = frame,
+        Size = UDim2.new(0.45, 0, 0, 24),
+        Position = UDim2.new(0.55, 0, 0.5, -12),
+        BackgroundColor3 = colors.bg3,
+        BackgroundTransparency = panelTransparency,
+        BorderSizePixel = 0,
+        ZIndex = 8
+    })
+    new("UICorner", {Parent = btnBg, CornerRadius = UDim.new(0, 4)})
+    
+    local initialValue = Library.ConfigSystem.Get(configPath, defaultValue)
+    
+    local bindBtn = new("TextButton", {
+        Parent = btnBg,
+        Size = UDim2.new(1, -16, 1, 0),
+        Position = UDim2.new(0, 8, 0, 0),
+        BackgroundTransparency = 1,
+        Text = initialValue ~= nil and tostring(initialValue) or "None",
+        Font = Enum.Font.GothamBold,
+        TextSize = fontSize.small,
+        TextColor3 = colors.text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 9
+    })
+    
+    local isBinding = false
+    local bindConn = nil
+
+    self:AddConnection("bind_" .. label .. tostring(bindBtn), bindBtn.MouseButton1Click:Connect(function()
+        if isBinding then return end
+        isBinding = true
+        bindBtn.Text = "..."
+        
+        bindConn = game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local k = input.KeyCode
+                if k == Enum.KeyCode.Unknown then return end
+                
+                isBinding = false
+                if bindConn then bindConn:Disconnect(); bindConn = nil end
+                
+                local kName = k.Name
+                if k == Enum.KeyCode.Escape then
+                    kName = "None"
+                end
+                
+                bindBtn.Text = kName
+                
+                if configPath then
+                    Library.ConfigSystem.Set(configPath, kName)
+                    MarkDirty()
+                end
+                if callback then callback(kName) end
+            end
+        end)
+    end))
+    
+    RegisterCallback(configPath, callback, "bind", defaultValue, function(val)
+        bindBtn.Text = tostring(val ~= nil and val or defaultValue or "None")
+    end)
+    
+    if callback and initialValue ~= nil then
+        callback(tostring(initialValue))
+    end
+    
+    return frame
+end
 function Library:CreateButton(parent, label, callback)
     local btnFrame = new("Frame", {
         Parent = parent,
@@ -2597,6 +2680,88 @@ function Library:Window(config)
                     SetValue = function(self, val) end
                 }
             end
+            
+            function SectionObject:AddBind(bindConfig)
+                bindConfig = bindConfig or {}
+                local title       = bindConfig.Title or "Bind"
+                local default     = bindConfig.Default or "None"
+                local callback    = bindConfig.Callback
+                local noSave      = bindConfig.NoSave or false
+                local configPath  = noSave and nil or ("Binds." .. title:gsub("%s+", "_"))
+                
+                local frame = self._library:CreateBind(self._container, title, configPath, default, callback)
+                if frame then frame.LayoutOrder = getNextLayoutOrder() end
+                registerFeature(title, frame, "Bind")
+                return {
+                    SetValue = function(self, val) end
+                }
+            end
+            
+            function SectionObject:AddHotkey(hotkeyConfig)
+                hotkeyConfig = hotkeyConfig or {}
+                local title    = hotkeyConfig.Title or "Hotkey"
+                local default  = hotkeyConfig.Default or ""
+                local callback = hotkeyConfig.Callback
+                
+                local function parseKeyString(val)
+                    local v = tostring(val)
+                    
+                    local ok, k = pcall(function() return Enum.KeyCode[v] end)
+                    if ok and k then return k end
+                    
+                    local upperVal = string.upper(v)
+                    ok, k = pcall(function() return Enum.KeyCode[upperVal] end)
+                    if ok and k then return k end
+                    
+                    local map = {
+                        ["1"] = Enum.KeyCode.One, ["2"] = Enum.KeyCode.Two, ["3"] = Enum.KeyCode.Three,
+                        ["4"] = Enum.KeyCode.Four, ["5"] = Enum.KeyCode.Five, ["6"] = Enum.KeyCode.Six,
+                        ["7"] = Enum.KeyCode.Seven, ["8"] = Enum.KeyCode.Eight, ["9"] = Enum.KeyCode.Nine,
+                        ["0"] = Enum.KeyCode.Zero, ["-"] = Enum.KeyCode.Minus, ["="] = Enum.KeyCode.Equals,
+                        ["["] = Enum.KeyCode.LeftBracket, ["]"] = Enum.KeyCode.RightBracket,
+                        ["\\"] = Enum.KeyCode.BackSlash, [";"] = Enum.KeyCode.Semicolon,
+                        ["'"] = Enum.KeyCode.Quote, [","] = Enum.KeyCode.Comma, ["."] = Enum.KeyCode.Period,
+                        ["/"] = Enum.KeyCode.Slash, ["`"] = Enum.KeyCode.Backquote,
+                        ["SPACE"] = Enum.KeyCode.Space, ["TAB"] = Enum.KeyCode.Tab,
+                        ["LSHIFT"] = Enum.KeyCode.LeftShift, ["RSHIFT"] = Enum.KeyCode.RightShift,
+                        ["LCTRL"] = Enum.KeyCode.LeftControl, ["RCTRL"] = Enum.KeyCode.RightControl,
+                        ["LALT"] = Enum.KeyCode.LeftAlt, ["RALT"] = Enum.KeyCode.RightAlt,
+                    }
+                    return map[upperVal] or map[v]
+                end
+
+                return self:AddBind({
+                    Title = title,
+                    Default = default,
+                    Callback = function(val)
+                        if tostring(val) == "None" then return end
+                        local k = parseKeyString(val)
+                        if k then
+                            -- Format the HUD string precisely. 
+                            -- If val is a known KeyCode name like 'LeftShift', map it to 'LSHIFT' for shorter display, 
+                            -- or simply use `val` if it's a short 1-length string. 
+                            -- Alternatively, we can let user see the uppercase original input.
+                            local hotkeyStr = string.upper(tostring(val))
+                            -- Shorten some keys for HUD
+                            if hotkeyStr == "LEFTSHIFT" then hotkeyStr = "LSHIFT" end
+                            if hotkeyStr == "RIGHTSHIFT" then hotkeyStr = "RSHIFT" end
+                            if hotkeyStr == "LEFTCONTROL" then hotkeyStr = "LCTRL" end
+                            if hotkeyStr == "RIGHTCONTROL" then hotkeyStr = "RCTRL" end
+                            if hotkeyStr == "LEFTALT" then hotkeyStr = "LALT" end
+                            if hotkeyStr == "RIGHTALT" then hotkeyStr = "RALT" end
+                            
+                            if callback then callback(k, hotkeyStr) end
+                        else
+                            Library:MakeNotify({
+                                Title       = "Error",
+                                Description = "Invalid key!",
+                                Delay       = 3,
+                            })
+                        end
+                    end
+                })
+            end
+            
             function SectionObject:AddButton(buttonConfig)
                 buttonConfig = buttonConfig or {}
                 local title    = buttonConfig.Title or "Button"
