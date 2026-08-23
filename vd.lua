@@ -1335,7 +1335,8 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
             Size = UDim2.new(1, 0, 1, 0),
             Position = UDim2.new(0, 0, 0, 0),
             BackgroundTransparency = 0.4,
-            BackgroundColor3 = colors.bg1,
+            BackgroundColor3 = colors.bg2,
+            BorderSizePixel = 0,
             Text = "",
             AutoButtonColor = false,
             ZIndex = 20
