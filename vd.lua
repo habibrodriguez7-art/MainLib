@@ -1334,8 +1334,8 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
             Parent = contentWrapper,
             Size = UDim2.new(1, 0, 1, 0),
             Position = UDim2.new(0, 0, 0, 0),
-            BackgroundTransparency = 1,
-            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 0.4,
+            BackgroundColor3 = colors.bg1,
             Text = "",
             AutoButtonColor = false,
             ZIndex = 20
