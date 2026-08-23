@@ -2302,61 +2302,103 @@ function Library:MakeNotify(config)
     end
     local notif = new("Frame", {
         Parent = self._gui,
-        Size = UDim2.new(0, 270, 0, 65),
-        Position = UDim2.new(1, -280, 1, -75),
-        BackgroundColor3 = colors.bg2,
-        BackgroundTransparency = panelTransparency,
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(1, -20, 1, -75), -- Keep bottom offset similar but flush right
+        AnchorPoint = Vector2.new(1, 1),
+        AutomaticSize = Enum.AutomaticSize.XY,
+        BackgroundColor3 = colors.bg1,
         BorderSizePixel = 0,
         ZIndex = 200
     })
     table.insert(self._activeNotifs, notif)
-    new("UICorner", {Parent = notif, CornerRadius = UDim.new(0, 6)})
-    local accent = new("Frame", {
+    
+    new("UIGradient", {
         Parent = notif,
-        Size = UDim2.new(0, 3, 1, -8),
-        Position = UDim2.new(0, 4, 0, 4),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.3, 0.5), 
+            NumberSequenceKeypoint.new(1, 0.2)
+        })
+    })
+
+    new("Frame", {
+        Parent = notif,
+        Size = UDim2.new(0, 3, 1, 0),
         BackgroundColor3 = color,
         BorderSizePixel = 0,
         ZIndex = 201
     })
-    new("UICorner", {Parent = accent, CornerRadius = UDim.new(1, 0)})
-    new("TextLabel", {
+
+    local textContainer = new("Frame", {
         Parent = notif,
-        Text = title,
-        Size = UDim2.new(1, -18, 0, 16),
-        Position = UDim2.new(0, 12, 0, 5),
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0, 15, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.XY,
         BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        TextSize = fontSize.normal,
-        TextColor3 = color,
-        TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex = 201
     })
-    new("TextLabel", {
-        Parent = notif,
-        Text = desc,
-        Size = UDim2.new(1, -18, 0, 12),
-        Position = UDim2.new(0, 12, 0, 22),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        TextSize = fontSize.small,
-        TextColor3 = colors.text,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 201
+    
+    new("UIPadding", {
+        Parent = textContainer,
+        PaddingTop = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
+        PaddingRight = UDim.new(0, 35)
     })
-    new("TextLabel", {
-        Parent = notif,
-        Text = content,
-        Size = UDim2.new(1, -18, 0, 22),
-        Position = UDim2.new(0, 12, 0, 36),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.Gotham,
-        TextSize = fontSize.small,
-        TextColor3 = colors.textDim,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextWrapped = true,
-        ZIndex = 201
+
+    new("UIListLayout", {
+        Parent = textContainer,
+        FillDirection = Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 4)
     })
+
+    if title and title ~= "" then
+        new("TextLabel", {
+            Parent = textContainer,
+            Text = title,
+            Size = UDim2.new(0, 0, 0, 14),
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamBold,
+            TextSize = 13,
+            TextColor3 = color,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 1,
+            ZIndex = 201
+        })
+    end
+    
+    if desc and desc ~= "" then
+        new("TextLabel", {
+            Parent = textContainer,
+            Text = desc,
+            Size = UDim2.new(0, 0, 0, 12),
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 12,
+            TextColor3 = colors.text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 2,
+            ZIndex = 201
+        })
+    end
+
+    if content and content ~= "" then
+        new("TextLabel", {
+            Parent = textContainer,
+            Text = content,
+            Size = UDim2.new(0, 0, 0, 12),
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Font = Enum.Font.Gotham,
+            TextSize = 11,
+            TextColor3 = colors.textDim,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 3,
+            ZIndex = 201
+        })
+    end
     task.delay(delay, function()
         pcall(function()
             if notif and notif.Parent then
