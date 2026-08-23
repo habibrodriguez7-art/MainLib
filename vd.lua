@@ -2183,7 +2183,7 @@ function Library:CreateButton(parent, label, callback)
     local button = new("TextButton", {
         Parent = btnFrame,
         Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = colors.primary,
+        BackgroundColor3 = colors.bg3,
         BackgroundTransparency = panelTransparency,
         Text = label,
         Font = Enum.Font.GothamBold,
@@ -2193,6 +2193,12 @@ function Library:CreateButton(parent, label, callback)
         ZIndex = 9
     })
     new("UICorner", {Parent = button, CornerRadius = UDim.new(0, 5)})
+    new("UIStroke", {
+        Parent = button,
+        Color = colors.border,
+        Thickness = 1,
+        Transparency = 0.3
+    })
 
     local isClicking = false
 
