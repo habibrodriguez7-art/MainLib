@@ -744,6 +744,7 @@ function Library:CreateWindow(config)
     local resizing = false
     local resizeStartPos, resizeStartSize = nil, nil
     local lastX, lastY = nil, nil
+    local win = self._win
     local function onMove(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             if dragging and startPos then
@@ -2500,11 +2501,11 @@ function Library:Window(config)
     WindowObject._tabOrder = 0
     Library._initialized = false
     Library._pendingWindowObj = WindowObject
-    task.delay(0.5, function()
+    function WindowObject:Build()
         if not Library._initialized then
             Library:Initialize()
         end
-    end)
+    end
     function WindowObject:AddTab(tabConfig)
         tabConfig = tabConfig or {}
         local tabName = tabConfig.Name or "Tab"
