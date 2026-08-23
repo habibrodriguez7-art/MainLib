@@ -744,23 +744,22 @@ function Library:CreateWindow(config)
     local resizing = false
     local resizeStartPos, resizeStartSize = nil, nil
     local lastX, lastY = nil, nil
-    local win = self._win
     local function onMove(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            if dragging and startPos then
+            if dragging and startPos and self._win then
                 local nx = startPos.X.Offset + (input.Position - dragStart).X
                 local ny = startPos.Y.Offset + (input.Position - dragStart).Y
                 if lastX == nil or nx-lastX > 0.5 or nx-lastX < -0.5 or ny-lastY > 0.5 or ny-lastY < -0.5 then
                     lastX, lastY = nx, ny
-                    win.Position = UDim2.new(startPos.X.Scale, nx, startPos.Y.Scale, ny)
+                    self._win.Position = UDim2.new(startPos.X.Scale, nx, startPos.Y.Scale, ny)
                 end
-            elseif resizing and resizeStartPos then
+            elseif resizing and resizeStartPos and self._win then
                 local d = input.Position - resizeStartPos
                 local nw = math.clamp(resizeStartSize.X.Offset + d.X, minWindowSize.X, maxWindowSize.X)
                 local nh = math.clamp(resizeStartSize.Y.Offset + d.Y, minWindowSize.Y, maxWindowSize.Y)
                 if lastX == nil or nw ~= lastX or nh ~= lastY then
                     lastX, lastY = nw, nh
-                    win.Size = UDim2.new(0, nw, 0, nh)
+                    self._win.Size = UDim2.new(0, nw, 0, nh)
                 end
             end
         end
