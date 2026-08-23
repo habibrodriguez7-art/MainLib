@@ -31,14 +31,14 @@ local colors = {
     secondary = Color3.fromRGB(255, 150, 30),  -- Lighter Amber
     accent = Color3.fromRGB(255, 175, 70),     -- Accent Gold/Orange
     success = Color3.fromRGB(34, 197, 94),     -- Green (Keep success)
-    bg1 = Color3.fromRGB(245, 235, 225),       -- White-orange / Warm light gray
-    bg2 = Color3.fromRGB(235, 220, 210),       -- Slightly darker warm gray
-    bg3 = Color3.fromRGB(220, 205, 195),       -- Elevated warm gray
-    bg4 = Color3.fromRGB(205, 190, 180),       -- Highest elevated
-    text = Color3.fromRGB(35, 25, 15),         -- Dark text for light background
-    textDim = Color3.fromRGB(100, 85, 75),     -- Muted dark text
-    textDimmer = Color3.fromRGB(150, 135, 125),-- Very muted text
-    border = Color3.fromRGB(215, 200, 190),    -- Light orange-gray border
+    bg1 = Color3.fromRGB(28, 25, 23),          -- Warm Dark Gray (Abu-abu gelap ke-orange)
+    bg2 = Color3.fromRGB(36, 32, 29),          -- Elevated surface
+    bg3 = Color3.fromRGB(48, 42, 38),          -- Higher elevated surface
+    bg4 = Color3.fromRGB(60, 52, 47),          -- Highest elevated
+    text = Color3.fromRGB(245, 240, 235),      -- Off-white (Warm)
+    textDim = Color3.fromRGB(190, 180, 175),   -- Muted text
+    textDimmer = Color3.fromRGB(140, 130, 125),-- Very muted text
+    border = Color3.fromRGB(70, 60, 55),       -- Warm border
 }
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
@@ -2302,20 +2302,15 @@ function Library:MakeNotify(config)
     end
     local notif = new("Frame", {
         Parent = self._gui,
-        Size = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(0, 280, 0, 0),
         Position = UDim2.new(1, -20, 1, -20),
         AnchorPoint = Vector2.new(1, 1),
-        AutomaticSize = Enum.AutomaticSize.XY,
+        AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundColor3 = colors.bg1,
         BorderSizePixel = 0,
         ZIndex = 200
     })
     table.insert(self._activeNotifs, notif)
-    
-    new("UISizeConstraint", {
-        Parent = notif,
-        MaxSize = Vector2.new(320, 9999)
-    })
     
     new("UIGradient", {
         Parent = notif,
@@ -2336,9 +2331,9 @@ function Library:MakeNotify(config)
 
     local textContainer = new("Frame", {
         Parent = notif,
-        Size = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(1, -15, 0, 0),
         Position = UDim2.new(0, 15, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.XY,
+        AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundTransparency = 1,
         ZIndex = 201
     })
