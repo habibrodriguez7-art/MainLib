@@ -3067,7 +3067,7 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
     local container = new("Frame", {
         Parent = row,
         Name = "HUDButton_" .. text,
-        Size = UDim2.new(0, 0, 0, 44),
+        Size = UDim2.new(0, 0, 0, 56),
         AutomaticSize = Enum.AutomaticSize.X,
         BackgroundColor3 = Color3.fromRGB(20, 10, 0),
         BackgroundTransparency = 0.6,
@@ -3112,8 +3112,8 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
 
     new("UIPadding", {
         Parent = container,
-        PaddingLeft = UDim.new(0, 24),
-        PaddingRight = UDim.new(0, 24)
+        PaddingLeft = UDim.new(0, 32),
+        PaddingRight = UDim.new(0, 32)
     })
     
     new("TextLabel", {
@@ -3123,7 +3123,7 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
         AutomaticSize = Enum.AutomaticSize.X,
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
-        TextSize = 16,
+        TextSize = 20,
         TextColor3 = Color3.fromRGB(255, 255, 255),
         RichText = true,
         Text = "<b>" .. text .. "</b>"
