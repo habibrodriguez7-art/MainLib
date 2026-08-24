@@ -3116,7 +3116,7 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
         PaddingRight = UDim.new(0, 32)
     })
     
-    new("TextLabel", {
+    local label = new("TextLabel", {
         Parent = container,
         Name = "Label",
         Size = UDim2.new(0, 0, 1, 0),
@@ -3162,7 +3162,7 @@ function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
         container = container,
         UpdateHotkey = function(self, newHotkey) end,
         UpdateText = function(self, newText)
-            if label then label.Text = tostring(newText) end
+            if label then label.Text = "<b>" .. tostring(newText) .. "</b>" end
         end
     }
     table.insert(self.Buttons, ref)
