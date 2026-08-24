@@ -3280,19 +3280,35 @@ function Library.FeatureHUDManager:RemoveButton(ref)
     
     local tempBtns = {}
     for _, b in ipairs(self.Buttons) do
-        table.insert(tempBtns, b)
+        local bContainer = type(b) == "table" and b.container or b
+        if bContainer then
+            local isAlive = false
+            pcall(function()
+                if bContainer.Parent ~= nil then
+                    isAlive = true
+                end
+            end)
+            if isAlive then
+                table.insert(tempBtns, b)
+            end
+        end
     end
     
     self.Buttons = {}
     for _, r in ipairs(self.Rows) do
-        r:Destroy()
+        pcall(function() r:Destroy() end)
     end
     self.Rows = {}
     
     for _, b in ipairs(tempBtns) do
+        local bContainer = type(b) == "table" and b.container or b
         local r = self:GetRow()
-        b.container.Parent = r
-        table.insert(self.Buttons, b)
+        local s, _ = pcall(function()
+            bContainer.Parent = r
+        end)
+        if s then
+            table.insert(self.Buttons, b)
+        end
     end
 end
 
