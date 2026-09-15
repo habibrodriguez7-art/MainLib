@@ -487,12 +487,14 @@ function Library:CreateWindow(config)
         Parent = topBar, ZIndex = 5, Size = u2(1, -10, 0, 1), Position = u2(0, 5, 1, -1),
         BackgroundColor3 = colors.border, BackgroundTransparency = 0.7,
     })
-    local dragStart
-    trackDrag(header, function() dragStart = pixelPosition(win, gui.AbsoluteSize) end, function(delta)
-        local screen, size = gui.AbsoluteSize, win.AbsoluteSize
-        local x = math.clamp(dragStart.X + delta.X, 80 - size.X, math.max(80 - size.X, screen.X - 80))
-        local y = math.clamp(dragStart.Y + delta.Y, 0, math.max(0, screen.Y - HEADER_H))
-        win.Position = u2(0, x, 0, y)
+    local dragStart, dragScreen, dragSize
+    trackDrag(header, function()
+        dragScreen, dragSize = gui.AbsoluteSize, win.AbsoluteSize
+        dragStart = pixelPosition(win, dragScreen)
+    end, function(delta)
+        local x = math.clamp(dragStart.X + delta.X, 80 - dragSize.X, math.max(80 - dragSize.X, dragScreen.X - 80))
+        local y = math.clamp(dragStart.Y + delta.Y, 0, math.max(0, dragScreen.Y - HEADER_H))
+        win.Position = u2(0, math.floor(x + 0.5), 0, math.floor(y + 0.5))
     end)
     local resizeHandle = new("TextButton", {
         Parent = win, ZIndex = 100, AnchorPoint = v2(1, 1), Size = u2(0, 18, 0, 18), Position = u2(1, 0, 1, 0),
@@ -519,12 +521,14 @@ function Library:CreateWindow(config)
             Parent = gui, ZIndex = 50, Active = true, Size = u2(0, 40, 0, 40), Position = iconPos,
             BackgroundColor3 = colors.bg2, Image = "rbxassetid://118176705805619", ScaleType = Enum.ScaleType.Fit,
         }, { corner(6) })
-        local iconStart
-        trackDrag(icon, function() iconStart = pixelPosition(icon, gui.AbsoluteSize) end, function(delta)
-            local screen = gui.AbsoluteSize
+        local iconStart, iconScreen
+        trackDrag(icon, function()
+            iconScreen = gui.AbsoluteSize
+            iconStart = pixelPosition(icon, iconScreen)
+        end, function(delta)
             icon.Position = u2(
-                0, math.clamp(iconStart.X + delta.X, 0, math.max(0, screen.X - 40)),
-                0, math.clamp(iconStart.Y + delta.Y, 0, math.max(0, screen.Y - 40))
+                0, math.floor(math.clamp(iconStart.X + delta.X, 0, math.max(0, iconScreen.X - 40)) + 0.5),
+                0, math.floor(math.clamp(iconStart.Y + delta.Y, 0, math.max(0, iconScreen.Y - 40)) + 0.5)
             )
         end, function(moved)
             if not icon then return end
@@ -899,7 +903,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
     end
     local DropdownFunc = { Value = copyValue(Config.Get(configPath, defaultValue)), Options = items or {} }
     local allOptions, filtered, selectedSet, labelByValue = {}, {}, {}, {}
-    local rows, lastCanvasH, needsRefresh, searchThread = {}, nil, false, nil
+    local rows, lastCanvasH, needsRefresh, searchThread, viewH = {}, nil, false, nil, 0
     local function isOpen() return self._openDropdown == container end
     local function emit(value)
         if not onSelect then return end
@@ -998,7 +1002,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
     end
     local function refreshVisible()
         if #rows == 0 then return end
-        local viewH = scroll.AbsoluteSize.Y
+        if viewH <= 0 then viewH = scroll.AbsoluteSize.Y end
         if viewH <= 0 then
             needsRefresh = true
             return
@@ -1034,11 +1038,12 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
     end
     local function ensureRows()
         if #rows > 0 then return end
-        local viewH = scroll.AbsoluteSize.Y
+        viewH = scroll.AbsoluteSize.Y
         local count = viewH > 0 and math.max(MIN_POOL, math.floor(viewH / ROW_STRIDE) + 2) or MIN_POOL
         for _ = 1, math.min(count, MAX_POOL) do buildRow() end
         scroll:GetPropertyChangedSignal("CanvasPosition"):Connect(refreshVisible)
         scroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            viewH = scroll.AbsoluteSize.Y
             if isOpen() then refreshVisible() end
         end)
     end
