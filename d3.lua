@@ -1310,8 +1310,8 @@ function Library:CreateParagraph(parent, config)
     local GAP, PAD_TOP, PAD_BOTTOM, PAD_LEFT, PAD_RIGHT = 3, 7, 8, 10, 10
     local frame = new("Frame", {
         Parent = parent, ZIndex = 7, Size = u2(1, 0, 0, PAD_TOP + PAD_BOTTOM + 12),
-        BackgroundColor3 = colors.bg3, BackgroundTransparency = 0.45,
-    }, { corner(4), stroke(nil, 0.6) })
+        BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
+    }, { corner(4), stroke(nil, 0.5) })
     local body = new("Frame", {
         Parent = frame, ZIndex = 8, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1,
     }, {
