@@ -163,35 +163,84 @@ function Library:_nextConnId()
     return self._connSeq
 end
 local CONFIG_FOLDER = "LynxGUI_Configs"
-local CONFIG_FILE   = CONFIG_FOLDER .. "/lynx_config.json"
+local LEGACY_FILE   = CONFIG_FOLDER .. "/lynx_config.json"
+local LEGACY_BACKUP = CONFIG_FOLDER .. "/lynx_config.backup.json"
+local COMPONENT_PREFIXES = { "Toggles", "Dropdowns", "MultiDropdowns", "Inputs" }
 local Config        = Library.ConfigSystem
 local CurrentConfig, DefaultConfig = {}, {}
 local CallbackRegistry = {}
 local isDirty, saveThread, lastSaveError = false, nil, nil
+local configId, migratedFromLegacy = nil, false
+local function resolveConfigId()
+    if configId then return configId end
+    local id = game.GameId
+    if not id or id == 0 then id = game.PlaceId end
+    return tostring(id)
+end
+local function configFile()
+    return ("%s/config_%s.json"):format(CONFIG_FOLDER, (resolveConfigId():gsub("[^%w_%-]", "_")))
+end
+local function readJson(path)
+    local exists = false
+    local ok, data = pcall(function()
+        exists = isfile(path)
+        if not exists then return nil end
+        local raw = readfile(path)
+        return raw ~= "" and HttpService:JSONDecode(raw) or nil
+    end)
+    return ok and type(data) == "table" and data or nil, exists
+end
+function Config.SetConfigId(id)
+    configId = id ~= nil and tostring(id) or nil
+end
+function Config.GetFileName()
+    return configFile()
+end
 function Config.SetDefaults(defaults)
     DefaultConfig = deepCopy(defaults or {})
 end
 function Config.Save()
     return pcall(function()
         if isfolder and makefolder and not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
-        writefile(CONFIG_FILE, HttpService:JSONEncode(CurrentConfig))
+        writefile(configFile(), HttpService:JSONEncode(CurrentConfig))
     end)
+end
+local function takeLegacyConfig()
+    local legacy = readJson(LEGACY_FILE)
+    if not legacy then return nil end
+    pcall(function()
+        writefile(LEGACY_BACKUP, readfile(LEGACY_FILE))
+        delfile(LEGACY_FILE)
+    end)
+    return legacy
 end
 function Config.Load()
     CurrentConfig = deepCopy(DefaultConfig)
-    local exists = false
-    local ok, loaded = pcall(function()
-        exists = isfile(CONFIG_FILE)
-        if not exists then return nil end
-        local raw = readfile(CONFIG_FILE)
-        return raw ~= "" and HttpService:JSONDecode(raw) or nil
-    end)
-    if ok and type(loaded) == "table" then
+    migratedFromLegacy = false
+    local loaded, exists = readJson(configFile())
+    if not loaded and not exists then
+        loaded = takeLegacyConfig()
+        migratedFromLegacy = loaded ~= nil
+    end
+    if loaded then
         mergeTables(CurrentConfig, loaded)
     elseif exists then
         warn("[LynxGUI] File config tidak bisa dibaca, sementara memakai nilai default.")
     end
     return CurrentConfig
+end
+local function pruneLegacyKeys()
+    if not migratedFromLegacy then return end
+    migratedFromLegacy = false
+    for _, prefix in ipairs(COMPONENT_PREFIXES) do
+        local group = CurrentConfig[prefix]
+        if type(group) == "table" then
+            for key in pairs(group) do
+                if not CallbackRegistry[prefix .. "." .. tostring(key)] then group[key] = nil end
+            end
+        end
+    end
+    Config.Save()
 end
 function Config.Get(path, default)
     if not path then return default end
@@ -224,7 +273,7 @@ function Config.Delete()
     cancelThread(saveThread)
     saveThread = nil
     pcall(function()
-        if isfile(CONFIG_FILE) then delfile(CONFIG_FILE) end
+        if isfile(configFile()) then delfile(configFile()) end
     end)
 end
 local function markDirty()
@@ -1270,6 +1319,7 @@ function Library:Initialize()
         safeCall("Config tab", self._createConfigTab, self, self._pendingWindow)
         self._pendingWindow = nil
     end
+    pruneLegacyKeys()
     executeConfigCallbacks()
     self:AddConnection("playerRemoving", Players.PlayerRemoving:Connect(function(player)
         if player ~= Players.LocalPlayer or not isDirty then return end
@@ -1500,7 +1550,8 @@ function Library:_createConfigTab(window)
         Title = "⚠️ Perhatian",
         Content = "Setelah melakukan Reset to Default, beberapa settingan seperti Toggle dan nilai Input akan langsung ter-update di UI.\n\n"
             .. "Namun untuk settingan yang mempengaruhi karakter, kecepatan, atau fitur aktif lainnya — kamu perlu Rejoin / Respawn agar perubahan berlaku sepenuhnya.\n\n"
-            .. "File config disimpan otomatis setiap 2 detik jika Auto Save aktif. Pastikan Auto Save ON sebelum keluar game agar settinganmu tidak hilang.",
+            .. "File config disimpan otomatis setiap 2 detik jika Auto Save aktif. Pastikan Auto Save ON sebelum keluar game agar settinganmu tidak hilang.\n\n"
+            .. "Setiap game punya file config sendiri. Game ini: " .. Config.GetFileName(),
     })
     addConfirmButton(section, "Delete Config File", rgb(200, 30, 30), function()
         Config.Delete()
@@ -1632,6 +1683,7 @@ end
 function Library:Window(config)
     config = config or {}
     self:CreateWindow({ Name = "LynxGui", Title = config.Title or "LynX", Subtitle = config.Footer or "" })
+    if config.ConfigId ~= nil then Config.SetConfigId(config.ConfigId) end
     Config.Load()
     local lib = self
     local Window = { _library = lib, _tabs = {}, _tabOrder = 0 }
