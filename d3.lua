@@ -452,10 +452,6 @@ function Library:CreateWindow(config)
         Parent = header, ZIndex = 5, Size = u2(1, -20, 0, 1), Position = u2(0, 10, 1, -1),
         BackgroundColor3 = colors.border, BackgroundTransparency = 0.62,
     })
-    new("Frame", {
-        Parent = header, ZIndex = 6, Size = u2(0, 28, 0, 2), Position = u2(0.5, -14, 0, 4),
-        BackgroundColor3 = colors.primary, BackgroundTransparency = 0.35,
-    }, { corner(2) })
     new("TextLabel", {
         Parent = header, ZIndex = 6, Text = config.Title or "LynX", Size = u2(0, 80, 1, 0), Position = u2(0, 12, 0, 0),
         TextSize = FONT.title, TextColor3 = colors.primary,
