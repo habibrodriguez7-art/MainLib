@@ -171,7 +171,6 @@ local CurrentConfig, DefaultConfig = {}, {}
 local CallbackRegistry = {}
 local isDirty, saveThread, lastSaveError = false, nil, nil
 local configId, migratedFromLegacy = nil, false
--- One file per experience: GameId is the universe, so every place of the same game shares it.
 local function resolveConfigId()
     if configId then return configId end
     local id = game.GameId
@@ -206,8 +205,6 @@ function Config.Save()
         writefile(configFile(), HttpService:JSONEncode(CurrentConfig))
     end)
 end
--- The old shared lynx_config.json is handed to the first game that loads without its own file,
--- then moved aside so no other game inherits it.
 local function takeLegacyConfig()
     local legacy = readJson(LEGACY_FILE)
     if not legacy then return nil end
@@ -232,7 +229,6 @@ function Config.Load()
     end
     return CurrentConfig
 end
--- Drops component values the legacy file carried over from other games' scripts.
 local function pruneLegacyKeys()
     if not migratedFromLegacy then return end
     migratedFromLegacy = false
@@ -365,6 +361,7 @@ function Library:Cleanup()
     table.clear(self._navButtons)
     table.clear(self._searchIndex)
     self._gui, self._win, self._currentPage = nil, nil, nil
+    self._pageParking, self._dropParking = nil, nil
     self._dropdown, self._openDropdown = nil, nil
     self._pendingWindow = nil
     self._connSeq = 0
@@ -524,6 +521,23 @@ function Library:CreateWindow(config)
         Parent = win, ZIndex = 4, ClipsDescendants = true, BackgroundTransparency = 1,
         Size = u2(1, -(SIDEBAR_W + 6), 1, -(HEADER_H + 3)), Position = u2(0, SIDEBAR_W + 3, 0, HEADER_H + 1),
     })
+    -- Hidden tabs and closed dropdowns are parked outside the window: Roblox re-lays out every
+    -- descendant of a moved frame, Visible=false or not, so keeping them in `win` makes dragging
+    -- cost scale with the number of features. The parking frames mirror the real sizes so text
+    -- wrapping and dropdown rows are already correct when they move back in.
+    local parking = new("Frame", { Parent = gui, Name = "Parking", Visible = false, BackgroundTransparency = 1 })
+    self._pageParking = parking
+    self._dropParking = new("Frame", { Parent = parking, BackgroundTransparency = 1 })
+    local resizing = false
+    local function syncParking()
+        local content, winSize = self._contentBg.AbsoluteSize, win.AbsoluteSize
+        parking.Size = u2(0, content.X, 0, content.Y)
+        self._dropParking.Size = u2(0, 160, 0, math.max(0, winSize.Y - HEADER_H - 16))
+    end
+    syncParking()
+    self._contentBg:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        if not resizing then syncParking() end
+    end)
     local topBar = new("Frame", {
         Parent = self._contentBg, ZIndex = 5, BackgroundTransparency = 1,
         Size = u2(1, -4, 0, TOPBAR_H), Position = u2(0, 2, 0, 2),
@@ -560,11 +574,16 @@ function Library:CreateWindow(config)
         }, { corner() })
     end
     local sizeStart
-    trackDrag(resizeHandle, function() sizeStart = win.AbsoluteSize end, function(delta)
+    trackDrag(resizeHandle, function()
+        sizeStart, resizing = win.AbsoluteSize, true
+    end, function(delta)
         win.Size = u2(
             0, math.clamp(sizeStart.X + delta.X, minSize.X, MAX_SIZE.X),
             0, math.clamp(sizeStart.Y + delta.Y, minSize.Y, MAX_SIZE.Y)
         )
+    end, function()
+        resizing = false
+        syncParking()
     end)
     local icon, iconPos = nil, u2(0, 20, 0, 100)
     minBtn.MouseButton1Click:Connect(function()
@@ -744,7 +763,7 @@ function Library:CreatePage(name, title, imageId, order)
         warn(("[LynxGUI] Nama tab duplikat -> '%s'. Tab lama akan tertimpa; pakai nama tab yang unik."):format(tostring(name)))
     end
     local page = new("Frame", {
-        Parent = self._contentBg, ZIndex = 5, Visible = false, ClipsDescendants = true, BackgroundTransparency = 1,
+        Parent = self._pageParking, ZIndex = 5, Visible = false, ClipsDescendants = true, BackgroundTransparency = 1,
         Size = u2(1, -12, 1, -(TOPBAR_H + 10)), Position = u2(0, 6, 0, TOPBAR_H + 6),
     })
     local content = new("ScrollingFrame", {
@@ -785,7 +804,9 @@ function Library:_switchPage(name)
     if self._currentPage == name or not self.pages[name] then return end
     self._currentPage = name
     for pageName, page in pairs(self.pages) do
-        page.frame.Visible = pageName == name
+        local active = pageName == name
+        page.frame.Visible = active
+        page.frame.Parent = active and self._contentBg or self._pageParking
     end
     for pageName, nav in pairs(self._navButtons) do
         local active = pageName == name
@@ -895,13 +916,18 @@ function Library:_showDropdown(container)
     local dropdown = self:_initDropdownSystem()
     if self._openDropdown and self._openDropdown ~= container then
         self._openDropdown.Visible = false
+        self._openDropdown.Parent = self._dropParking
     end
     self._openDropdown = container
+    container.Parent = dropdown.panel
     container.Visible = true
     dropdown.overlay.Visible = true
 end
 function Library:_hideDropdown()
-    if self._openDropdown then self._openDropdown.Visible = false end
+    if self._openDropdown then
+        self._openDropdown.Visible = false
+        self._openDropdown.Parent = self._dropParking
+    end
     self._openDropdown = nil
     if self._dropdown then self._dropdown.overlay.Visible = false end
 end
@@ -937,7 +963,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         AnchorPoint = v2(1, 0.5), Position = u2(1, -6, 0.5, 0), Size = u2(0, 11, 0, 11),
     })
     local openButton = new("TextButton", { Parent = frame, ZIndex = 10, Size = u2(1, 0, 1, 0) })
-    local container = new("Frame", { Parent = dropdown.panel, ZIndex = 153, Visible = false, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1 })
+    local container = new("Frame", { Parent = self._dropParking, ZIndex = 153, Visible = false, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1 })
     local searchBox = new("TextBox", {
         Parent = container, ZIndex = 154, PlaceholderText = "Search...",
         Size = u2(1, -8, 0, 24), Position = u2(0, 4, 0, 4),
