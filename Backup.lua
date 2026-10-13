@@ -1,6 +1,5 @@
 local Players          = game:GetService("Players")
 local CoreGui          = game:GetService("CoreGui")
-local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService      = game:GetService("HttpService")
 local TextService      = game:GetService("TextService")
@@ -149,6 +148,7 @@ local Library = {
     _navButtons   = {},
     _connections  = {},
     _searchIndex  = {},
+    _staleParagraphs = {},
     _connSeq      = 0,
     _initialized  = false,
 }
@@ -360,7 +360,9 @@ function Library:Cleanup()
     table.clear(self.pages)
     table.clear(self._navButtons)
     table.clear(self._searchIndex)
+    table.clear(self._staleParagraphs)
     self._gui, self._win, self._currentPage = nil, nil, nil
+    self._pageParking, self._dropParking = nil, nil
     self._dropdown, self._openDropdown = nil, nil
     self._pendingWindow = nil
     self._connSeq = 0
@@ -450,10 +452,6 @@ function Library:CreateWindow(config)
         Parent = header, ZIndex = 5, Size = u2(1, -20, 0, 1), Position = u2(0, 10, 1, -1),
         BackgroundColor3 = colors.border, BackgroundTransparency = 0.62,
     })
-    new("Frame", {
-        Parent = header, ZIndex = 6, Size = u2(0, 28, 0, 2), Position = u2(0.5, -14, 0, 4),
-        BackgroundColor3 = colors.primary, BackgroundTransparency = 0.35,
-    }, { corner(2) })
     new("TextLabel", {
         Parent = header, ZIndex = 6, Text = config.Title or "LynX", Size = u2(0, 80, 1, 0), Position = u2(0, 12, 0, 0),
         TextSize = FONT.title, TextColor3 = colors.primary,
@@ -520,6 +518,23 @@ function Library:CreateWindow(config)
         Parent = win, ZIndex = 4, ClipsDescendants = true, BackgroundTransparency = 1,
         Size = u2(1, -(SIDEBAR_W + 6), 1, -(HEADER_H + 3)), Position = u2(0, SIDEBAR_W + 3, 0, HEADER_H + 1),
     })
+    -- Hidden tabs and closed dropdowns are parked outside the window: Roblox re-lays out every
+    -- descendant of a moved frame, Visible=false or not, so keeping them in `win` makes dragging
+    -- cost scale with the number of features. The parking frames mirror the real sizes so text
+    -- wrapping and dropdown rows are already correct when they move back in.
+    local parking = new("Frame", { Parent = gui, Name = "Parking", Visible = false, BackgroundTransparency = 1 })
+    self._pageParking = parking
+    self._dropParking = new("Frame", { Parent = parking, BackgroundTransparency = 1 })
+    local resizing = false
+    local function syncParking()
+        local content, winSize = self._contentBg.AbsoluteSize, win.AbsoluteSize
+        parking.Size = u2(0, content.X, 0, content.Y)
+        self._dropParking.Size = u2(0, 160, 0, math.max(0, winSize.Y - HEADER_H - 16))
+    end
+    syncParking()
+    self._contentBg:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        if not resizing then syncParking() end
+    end)
     local topBar = new("Frame", {
         Parent = self._contentBg, ZIndex = 5, BackgroundTransparency = 1,
         Size = u2(1, -4, 0, TOPBAR_H), Position = u2(0, 2, 0, 2),
@@ -548,19 +563,26 @@ function Library:CreateWindow(config)
     local resizeHandle = new("TextButton", {
         Parent = win, ZIndex = 100, AnchorPoint = v2(1, 1), Size = u2(0, 18, 0, 18), Position = u2(1, 0, 1, 0),
     })
-    for _, grip in ipairs({ { -3, -3 }, { -7, -3 }, { -3, -7 } }) do
+    -- Dot triangle instead of rotated bars: any GuiObject with Rotation ~= 0 inside the window
+    -- makes every drag frame take Roblox's slow render path (~0.4 ms/frame measured).
+    for _, grip in ipairs({ { -3, -3 }, { -7, -3 }, { -11, -3 }, { -3, -7 }, { -7, -7 }, { -3, -11 } }) do
         new("Frame", {
-            Parent = resizeHandle, ZIndex = 101, AnchorPoint = v2(1, 1), Rotation = -45,
-            Size = u2(0, 6, 0, 2), Position = u2(1, grip[1], 1, grip[2]),
+            Parent = resizeHandle, ZIndex = 101, AnchorPoint = v2(1, 1),
+            Size = u2(0, 2, 0, 2), Position = u2(1, grip[1], 1, grip[2]),
             BackgroundColor3 = colors.textDim, BackgroundTransparency = 0.35,
-        }, { corner() })
+        })
     end
     local sizeStart
-    trackDrag(resizeHandle, function() sizeStart = win.AbsoluteSize end, function(delta)
+    trackDrag(resizeHandle, function()
+        sizeStart, resizing = win.AbsoluteSize, true
+    end, function(delta)
         win.Size = u2(
             0, math.clamp(sizeStart.X + delta.X, minSize.X, MAX_SIZE.X),
             0, math.clamp(sizeStart.Y + delta.Y, minSize.Y, MAX_SIZE.Y)
         )
+    end, function()
+        resizing = false
+        syncParking()
     end)
     local icon, iconPos = nil, u2(0, 20, 0, 100)
     minBtn.MouseButton1Click:Connect(function()
@@ -593,7 +615,9 @@ function Library:CreateWindow(config)
 end
 function Library:_createSearchBar()
     local SEARCH_W, SEARCH_H = SIDEBAR_W - 12, 22
-    local ROW_H, ROW_GAP, LIST_PAD, MAX_PANEL_H = 32, 3, 4, 168
+    local PANEL_W, ROW_H, ROW_GAP, LIST_PAD, MAX_PANEL_H = 230, 32, 2, 4, 200
+    local ROW_STRIDE = ROW_H + ROW_GAP
+    local POOL_SIZE = math.ceil(MAX_PANEL_H / ROW_STRIDE) + 1
     local searchStroke = stroke()
     local container = new("Frame", {
         Parent = self._sidebar, Name = "SearchBar", ZIndex = 7,
@@ -614,31 +638,18 @@ function Library:_createSearchBar()
     })
     local panel = new("Frame", {
         Parent = self._win, Name = "SearchResults", ZIndex = 60, Visible = false,
-        Size = u2(0, SEARCH_W, 0, ROW_H + LIST_PAD * 2), Position = u2(0, 6, 0, HEADER_H + SEARCH_H + 9),
-        BackgroundColor3 = colors.bg2, BackgroundTransparency = PANEL_T,
+        Size = u2(0, PANEL_W, 0, ROW_H + LIST_PAD * 2), Position = u2(0, 6, 0, HEADER_H + SEARCH_H + 9),
+        BackgroundColor3 = colors.bg2, BackgroundTransparency = 0.05,
     }, { corner(5), stroke(nil, 0.35) })
     local list = new("ScrollingFrame", {
-        Parent = panel, ZIndex = 61, Size = u2(1, -6, 1, -6), Position = u2(0, 3, 0, 3),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
-    }, {
-        new("UIListLayout", { Padding = UDim.new(0, ROW_GAP), SortOrder = Enum.SortOrder.LayoutOrder }),
-        new("UIPadding", { PaddingRight = UDim.new(0, 1) }),
+        Parent = panel, ZIndex = 61, Size = u2(1, -LIST_PAD * 2, 1, -LIST_PAD * 2), Position = u2(0, LIST_PAD, 0, LIST_PAD),
+        ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2,
+        ScrollBarImageColor3 = colors.border, ScrollBarImageTransparency = 0.2,
     })
     local emptyLabel = new("TextLabel", {
-        Parent = panel, ZIndex = 62, Visible = false, Text = "No features found", TextColor3 = colors.textDimmer,
-        Size = u2(1, -16, 1, 0), Position = u2(0, 8, 0, 0),
+        Parent = panel, ZIndex = 62, Visible = false, Text = "No features found", Font = MEDIUM,
+        TextColor3 = colors.textDimmer, TextXAlignment = Enum.TextXAlignment.Center, Size = u2(1, 0, 1, 0),
     })
-    local function highlight(frame)
-        local old = frame:FindFirstChild("__SearchHL")
-        if old then old:Destroy() end
-        local hl = new("UIStroke", { Parent = frame, Name = "__SearchHL", Color = colors.primary, Thickness = 2 })
-        task.delay(1, function()
-            if not hl.Parent then return end
-            local tween = TweenService:Create(hl, TweenInfo.new(0.45), { Transparency = 1 })
-            tween.Completed:Connect(function() hl:Destroy() end)
-            tween:Play()
-        end)
-    end
     local function goToFeature(entry)
         panel.Visible = false
         searchBox.Text = ""
@@ -654,63 +665,83 @@ function Library:_createSearchBar()
                 local y = frame.AbsolutePosition.Y - content.AbsolutePosition.Y + content.CanvasPosition.Y
                 content.CanvasPosition = v2(0, math.max(0, y - 4))
             end
-            highlight(frame)
         end)
     end
-    local rows = {}
-    local function getRow(i)
-        if rows[i] then return rows[i] end
+    -- Virtualised like the dropdowns: a one-letter query matches hundreds of features, and building
+    -- a row per match froze the client for 50-80 ms and left ~2k instances inside the window.
+    local results, rows = {}, {}
+    local function setRowHover(row, on)
+        row.button.BackgroundTransparency = on and SECTION_T or 1
+    end
+    local function buildRow()
         local button = new("TextButton", {
-            Parent = list, ZIndex = 62, Size = u2(1, 0, 0, ROW_H),
-            BackgroundColor3 = colors.bg3, BackgroundTransparency = SECTION_T,
+            Parent = list, ZIndex = 62, Visible = false, Size = u2(1, -4, 0, ROW_H),
+            BackgroundColor3 = colors.bg3, BackgroundTransparency = 1,
         }, { corner(4) })
-        new("Frame", {
-            Parent = button, ZIndex = 63, Size = u2(0, 3, 1, -8), Position = u2(0, 0, 0, 4),
-            BackgroundColor3 = colors.primary,
-        }, { corner() })
         local row = { button = button }
         row.name = new("TextLabel", {
             Parent = button, ZIndex = 63, TextTruncate = Enum.TextTruncate.AtEnd,
-            Size = u2(1, -14, 0, 15), Position = u2(0, 9, 0, 4),
+            Size = u2(1, -16, 0, 14), Position = u2(0, 8, 0, 4),
         })
         row.meta = new("TextLabel", {
             Parent = button, ZIndex = 63, Font = MEDIUM, TextSize = 9, TextColor3 = colors.textDimmer,
-            TextTruncate = Enum.TextTruncate.AtEnd, Size = u2(1, -14, 0, 11), Position = u2(0, 9, 0, 18),
+            TextTruncate = Enum.TextTruncate.AtEnd, Size = u2(1, -16, 0, 11), Position = u2(0, 8, 0, 18),
         })
-        onHover(button,
-            function() button.BackgroundColor3 = colors.bg4 end,
-            function() button.BackgroundColor3 = colors.bg3 end)
+        onHover(button, function() setRowHover(row, true) end, function() setRowHover(row, false) end)
         button.MouseButton1Click:Connect(function()
             if row.entry then goToFeature(row.entry) end
         end)
-        rows[i] = row
-        return row
+        rows[#rows + 1] = row
     end
-    local function doSearch(query)
-        query = query:lower():match("^%s*(.-)%s*$")
-        local count = 0
-        if query ~= "" then
-            for _, entry in ipairs(self._searchIndex) do
-                if entry.frame.Parent and entry.lname:find(query, 1, true) then
-                    count = count + 1
-                    local row = getRow(count)
+    local function renderRows()
+        local total = #results
+        local first = math.max(1, math.floor(list.CanvasPosition.Y / ROW_STRIDE) + 1)
+        while #rows < math.min(total, POOL_SIZE) do buildRow() end
+        for i, row in ipairs(rows) do
+            local index = first + i - 1
+            local entry = results[index]
+            if entry then
+                if row.entry ~= entry then
                     row.entry = entry
                     row.name.Text = entry.name
-                    row.meta.Text = entry.sectionTitle ~= "" and (entry.pageName .. " • " .. entry.sectionTitle) or entry.pageName
-                    row.button.LayoutOrder = count
-                    row.button.BackgroundColor3 = colors.bg3
-                    row.button.Visible = true
+                    row.meta.Text = entry.sectionTitle ~= "" and (entry.pageName .. "  ›  " .. entry.sectionTitle) or entry.pageName
+                    setRowHover(row, false)
+                end
+                row.button.Position = u2(0, 0, 0, (index - 1) * ROW_STRIDE)
+            else
+                row.entry = nil
+            end
+            row.button.Visible = entry ~= nil
+        end
+    end
+    list:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+        if panel.Visible then renderRows() end
+    end)
+    local function doSearch(query)
+        query = query:lower():match("^%s*(.-)%s*$")
+        table.clear(results)
+        if query ~= "" then
+            local later = {}
+            for _, entry in ipairs(self._searchIndex) do
+                if entry.frame.Parent then
+                    local at = entry.lname:find(query, 1, true)
+                    if at == 1 then
+                        results[#results + 1] = entry
+                    elseif at then
+                        later[#later + 1] = entry
+                    end
                 end
             end
+            table.move(later, 1, #later, #results + 1, results)
         end
-        for i = count + 1, #rows do
-            rows[i].button.Visible = false
-            rows[i].entry = nil
-        end
-        emptyLabel.Visible = count == 0
-        local contentH = count * ROW_H + math.max(0, count - 1) * ROW_GAP + LIST_PAD * 2
-        panel.Size = u2(0, SEARCH_W, 0, count == 0 and (ROW_H + LIST_PAD * 2) or math.min(contentH, MAX_PANEL_H))
+        local total = #results
+        local canvasH = math.max(0, total * ROW_STRIDE - ROW_GAP)
+        list.CanvasSize = u2(0, 0, 0, canvasH)
+        list.CanvasPosition = v2(0, 0)
+        emptyLabel.Visible = total == 0
+        panel.Size = u2(0, PANEL_W, 0, total == 0 and (ROW_H + LIST_PAD * 2) or math.min(canvasH + LIST_PAD * 2, MAX_PANEL_H))
         panel.Visible = query ~= ""
+        renderRows()
     end
     local searchThread
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
@@ -740,7 +771,7 @@ function Library:CreatePage(name, title, imageId, order)
         warn(("[LynxGUI] Nama tab duplikat -> '%s'. Tab lama akan tertimpa; pakai nama tab yang unik."):format(tostring(name)))
     end
     local page = new("Frame", {
-        Parent = self._contentBg, ZIndex = 5, Visible = false, ClipsDescendants = true, BackgroundTransparency = 1,
+        Parent = self._pageParking, ZIndex = 5, Visible = false, ClipsDescendants = true, BackgroundTransparency = 1,
         Size = u2(1, -12, 1, -(TOPBAR_H + 10)), Position = u2(0, 6, 0, TOPBAR_H + 6),
     })
     local content = new("ScrollingFrame", {
@@ -781,7 +812,9 @@ function Library:_switchPage(name)
     if self._currentPage == name or not self.pages[name] then return end
     self._currentPage = name
     for pageName, page in pairs(self.pages) do
-        page.frame.Visible = pageName == name
+        local active = pageName == name
+        page.frame.Visible = active
+        page.frame.Parent = active and self._contentBg or self._pageParking
     end
     for pageName, nav in pairs(self._navButtons) do
         local active = pageName == name
@@ -791,6 +824,7 @@ function Library:_switchPage(name)
         nav.indicator.Visible = active
     end
     self._pageTitle.Text = self.pages[name].title or name
+    self:_flushParagraphs()
 end
 function Library:CreateCategory(parent, title, startOpen)
     local frame = new("Frame", {
@@ -822,8 +856,9 @@ function Library:CreateCategory(parent, title, startOpen)
     local function setOpen(state)
         isOpen = state
         content.Visible = state
-        arrow.Rotation = state and 180 or 0
+        arrow.Text = state and "▲" or "▼"
         updateHeight()
+        if state then self:_flushParagraphs() end
     end
     setOpen(isOpen)
     layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight)
@@ -891,13 +926,18 @@ function Library:_showDropdown(container)
     local dropdown = self:_initDropdownSystem()
     if self._openDropdown and self._openDropdown ~= container then
         self._openDropdown.Visible = false
+        self._openDropdown.Parent = self._dropParking
     end
     self._openDropdown = container
+    container.Parent = dropdown.panel
     container.Visible = true
     dropdown.overlay.Visible = true
 end
 function Library:_hideDropdown()
-    if self._openDropdown then self._openDropdown.Visible = false end
+    if self._openDropdown then
+        self._openDropdown.Visible = false
+        self._openDropdown.Parent = self._dropParking
+    end
     self._openDropdown = nil
     if self._dropdown then self._dropdown.overlay.Visible = false end
 end
@@ -933,7 +973,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         AnchorPoint = v2(1, 0.5), Position = u2(1, -6, 0.5, 0), Size = u2(0, 11, 0, 11),
     })
     local openButton = new("TextButton", { Parent = frame, ZIndex = 10, Size = u2(1, 0, 1, 0) })
-    local container = new("Frame", { Parent = dropdown.panel, ZIndex = 153, Visible = false, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1 })
+    local container = new("Frame", { Parent = self._dropParking, ZIndex = 153, Visible = false, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1 })
     local searchBox = new("TextBox", {
         Parent = container, ZIndex = 154, PlaceholderText = "Search...",
         Size = u2(1, -8, 0, 24), Position = u2(0, 4, 0, 4),
@@ -1246,37 +1286,57 @@ function Library:CreateButton(parent, label, callback)
     end)
     return frame
 end
+-- True when `frame` is actually drawn: inside the active page and not under a collapsed section.
+function Library:_isOnScreen(frame)
+    local node, root = frame, self._contentBg
+    while node and node ~= root do
+        if node:IsA("GuiObject") and not node.Visible then return false end
+        node = node.Parent
+    end
+    return node ~= nil
+end
+-- Paragraphs that changed while off screen keep only their latest text; it is applied when
+-- they show up. Re-shaping wrapped text costs ~0.13 ms per label even when hidden.
+function Library:_flushParagraphs()
+    for flush in pairs(self._staleParagraphs) do
+        flush()
+    end
+end
 function Library:CreateParagraph(parent, config)
-    local GAP, PADDING_V = 6, 20
+    local GAP, PAD_TOP, PAD_BOTTOM, PAD_LEFT, PAD_RIGHT = 3, 7, 8, 10, 10
     local frame = new("Frame", {
-        Parent = parent, ZIndex = 7, Size = u2(1, 0, 0, PADDING_V),
-        BackgroundColor3 = colors.bg2, BackgroundTransparency = 0.5,
+        Parent = parent, ZIndex = 7, Size = u2(1, 0, 0, PAD_TOP + PAD_BOTTOM + 12),
+        BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
+    }, { corner(4), stroke(nil, 0.5) })
+    local body = new("Frame", {
+        Parent = frame, ZIndex = 8, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1,
     }, {
-        corner(5), stroke(nil, 0.65),
         new("UIPadding", {
-            PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-            PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
+            PaddingTop = UDim.new(0, PAD_TOP), PaddingBottom = UDim.new(0, PAD_BOTTOM),
+            PaddingLeft = UDim.new(0, PAD_LEFT), PaddingRight = UDim.new(0, PAD_RIGHT),
         }),
         new("UIListLayout", { Padding = UDim.new(0, GAP), SortOrder = Enum.SortOrder.LayoutOrder }),
     })
     local function makeLabel(order, font, size, color, minHeight)
         return new("TextLabel", {
-            Parent = frame, ZIndex = 8, LayoutOrder = order, Font = font, TextSize = size, TextColor3 = color,
+            Parent = body, ZIndex = 9, LayoutOrder = order, Font = font, TextSize = size, TextColor3 = color,
             TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, RichText = config.RichText ~= false,
             Size = u2(1, 0, 0, minHeight),
         })
     end
-    local titleLabel = makeLabel(1, BOLD, FONT.normal, colors.primary, 14)
+    local titleLabel = makeLabel(1, BOLD, FONT.normal, colors.text, 14)
     local contentLabel = makeLabel(2, MEDIUM, FONT.small, colors.textDim, 12)
+    contentLabel.LineHeight = 1.1
     local minHeights = { [titleLabel] = 14, [contentLabel] = 12 }
-    local pending = false
+    local latest = { [titleLabel] = "", [contentLabel] = "" }
+    local reflowQueued = false
     local function reflow()
-        if pending then return end
-        pending = true
+        if reflowQueued then return end
+        reflowQueued = true
         task.defer(function()
-            pending = false
+            reflowQueued = false
             if not frame.Parent then return end
-            local total, shown = PADDING_V, 0
+            local total, shown = PAD_TOP + PAD_BOTTOM, 0
             for _, lbl in ipairs({ titleLabel, contentLabel }) do
                 if lbl.Visible then
                     local h = math.max(lbl.TextBounds.Y, minHeights[lbl])
@@ -1288,23 +1348,48 @@ function Library:CreateParagraph(parent, config)
             frame.Size = u2(1, 0, 0, total + math.max(0, shown - 1) * GAP)
         end)
     end
-    local function setText(lbl, text)
-        lbl.Text = formatRichText(text)
-        lbl.Visible = lbl.Text ~= ""
+    local function apply(lbl)
+        local text = latest[lbl]
+        if lbl.Text == text then return end
+        lbl.Text = text
+        lbl.Visible = text ~= ""
         reflow()
+    end
+    local function flush()
+        if not frame.Parent then
+            self._staleParagraphs[flush] = nil
+            return
+        end
+        if not self:_isOnScreen(frame) then return end
+        self._staleParagraphs[flush] = nil
+        apply(titleLabel)
+        apply(contentLabel)
+    end
+    local function setText(lbl, text)
+        text = formatRichText(text)
+        if latest[lbl] == text then return end
+        latest[lbl] = text
+        if self:_isOnScreen(frame) then
+            apply(lbl)
+        else
+            self._staleParagraphs[flush] = true
+        end
     end
     titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
     contentLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
-    setText(titleLabel, config.Title)
-    setText(contentLabel, config.Content)
+    -- The first text is applied right away so the card has its real height from the start.
+    latest[titleLabel], latest[contentLabel] = formatRichText(config.Title), formatRichText(config.Content)
+    apply(titleLabel)
+    apply(contentLabel)
+    titleLabel.Visible, contentLabel.Visible = titleLabel.Text ~= "", contentLabel.Text ~= ""
     return {
         _frame = frame,
         _titleLabel = titleLabel,
         _contentLabel = contentLabel,
         SetTitle = function(_, text) setText(titleLabel, text) end,
         SetContent = function(_, text) setText(contentLabel, text) end,
-        GetTitle = function() return titleLabel.Text end,
-        GetContent = function() return contentLabel.Text end,
+        GetTitle = function() return latest[titleLabel] end,
+        GetContent = function() return latest[contentLabel] end,
     }
 end
 function Library:Init()
