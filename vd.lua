@@ -43,7 +43,32 @@ local colors = {
 -- Detect platform: mobile = touch primary with no mouse; PC = everything else.
 -- Mobile keeps the original compact size; PC gets a larger default and a wider
 -- resize ceiling so the window can stretch for desktop play.
-local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+-- Kalau Switch Platform (VD_Premium) aktif di config, pilihannya yang dipakai. Dulu selalu dari
+-- perangkat asli, jadi script yang dijalankan ulang dengan platform Mobile tetap tampil PC.
+-- Dibaca dari config (bukan atribut "platform") karena saat script pertama dijalankan setelah
+-- rejoin, spoof-nya baru diterapkan setelah library dimuat.
+local function platformFromConfig()
+    local ok, choice = pcall(function()
+        if not (isfile and readfile and isfile(CONFIG_FILE)) then return nil end
+        local cfg = HttpService:JSONDecode(readfile(CONFIG_FILE))
+        local toggles = type(cfg) == "table" and cfg.Toggles
+        local drops = type(cfg) == "table" and cfg.Dropdowns
+        if type(toggles) == "table" and toggles.Enable_Switch_Platform == true and type(drops) == "table" then
+            return drops.Platform
+        end
+        return nil
+    end)
+    return ok and choice or nil
+end
+local spoofedPlatform = platformFromConfig()
+local isMobile
+if spoofedPlatform == "Mobile" then
+    isMobile = true
+elseif spoofedPlatform == "PC" or spoofedPlatform == "Console" then
+    isMobile = false
+else
+    isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+end
 local windowSize, minWindowSize, maxWindowSize
 if isMobile then
     windowSize    = UDim2.new(0, 420, 0, 280) -- sama persis seperti ukuran lama
