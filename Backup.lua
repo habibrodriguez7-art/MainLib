@@ -608,6 +608,7 @@ function Library:CreateWindow(config)
             icon:Destroy()
             icon = nil
             win.Visible = true
+            self:_flushParagraphs()
         end)
     end)
     self:_createSearchBar()
@@ -973,15 +974,9 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         AnchorPoint = v2(1, 0.5), Position = u2(1, -6, 0.5, 0), Size = u2(0, 11, 0, 11),
     })
     local openButton = new("TextButton", { Parent = frame, ZIndex = 10, Size = u2(1, 0, 1, 0) })
-    local container = new("Frame", { Parent = self._dropParking, ZIndex = 153, Visible = false, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1 })
-    local searchBox = new("TextBox", {
-        Parent = container, ZIndex = 154, PlaceholderText = "Search...",
-        Size = u2(1, -8, 0, 24), Position = u2(0, 4, 0, 4),
-        BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
-    }, { corner(4), stroke(nil, 0.5), new("UIPadding", { PaddingLeft = UDim.new(0, 8) }) })
-    local scroll = new("ScrollingFrame", {
-        Parent = container, ZIndex = 154, Size = u2(1, -8, 1, -36), Position = u2(0, 4, 0, 32),
-    })
+    -- The popup (search box + option list) is built on first open; most dropdowns are never opened
+    -- in a session, and building them all up front was ~500 extra instances in a full script.
+    local container, searchBox, scroll
     local function copyValue(v)
         if not isMulti then return v end
         local out = {}
@@ -993,7 +988,8 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
     local DropdownFunc = { Value = copyValue(Config.Get(configPath, defaultValue)), Options = items or {} }
     local allOptions, filtered, selectedSet, labelByValue = {}, {}, {}, {}
     local rows, lastCanvasH, needsRefresh, searchThread, viewH = {}, nil, false, nil, 0
-    local function isOpen() return self._openDropdown == container end
+    local function isOpen() return container ~= nil and self._openDropdown == container end
+    local function searchQuery() return searchBox and searchBox.Text:lower() or "" end
     local function emit(value)
         if not onSelect then return end
         if isMulti then
@@ -1013,7 +1009,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         end
     end
     local function applyFilter()
-        local query = searchBox.Text:lower()
+        local query = searchQuery()
         table.clear(filtered)
         for _, opt in ipairs(allOptions) do
             if query == "" or opt.lower:find(query, 1, true) then filtered[#filtered + 1] = opt end
@@ -1125,8 +1121,17 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
             end
         end
     end
-    local function ensureRows()
-        if #rows > 0 then return end
+    local function buildPopup()
+        if container then return end
+        container = new("Frame", { Parent = self._dropParking, ZIndex = 153, Visible = false, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1 })
+        searchBox = new("TextBox", {
+            Parent = container, ZIndex = 154, PlaceholderText = "Search...",
+            Size = u2(1, -8, 0, 24), Position = u2(0, 4, 0, 4),
+            BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
+        }, { corner(4), stroke(nil, 0.5), new("UIPadding", { PaddingLeft = UDim.new(0, 8) }) })
+        scroll = new("ScrollingFrame", {
+            Parent = container, ZIndex = 154, Size = u2(1, -8, 1, -36), Position = u2(0, 4, 0, 32),
+        })
         viewH = scroll.AbsoluteSize.Y
         local count = viewH > 0 and math.max(MIN_POOL, math.floor(viewH / ROW_STRIDE) + 2) or MIN_POOL
         for _ = 1, math.min(count, MAX_POOL) do buildRow() end
@@ -1135,6 +1140,18 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
             viewH = scroll.AbsoluteSize.Y
             if isOpen() then refreshVisible() end
         end)
+        searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            cancelThread(searchThread)
+            searchThread = task.delay(searchBox.Text == "" and 0 or 0.08, function()
+                searchThread = nil
+                applyFilter()
+                scroll.CanvasPosition = v2(0, 0)
+                refreshVisible()
+            end)
+        end)
+    end
+    local function resetScroll()
+        if scroll then scroll.CanvasPosition = v2(0, 0) end
     end
     local function refresh()
         updateSelection()
@@ -1152,12 +1169,12 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         setOptions({})
         DropdownFunc.Value = copyValue(nil)
         applyFilter()
-        scroll.CanvasPosition = v2(0, 0)
+        resetScroll()
         refresh()
     end
     function DropdownFunc:AddOption(opt)
         local option = normalizeOption(opt)
-        local query = searchBox.Text:lower()
+        local query = searchQuery()
         table.insert(DropdownFunc.Options, opt)
         allOptions[#allOptions + 1] = option
         if labelByValue[option.value] == nil then labelByValue[option.value] = option.label end
@@ -1169,7 +1186,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         DropdownFunc.Value = copyValue(selecting)
         saveValue(configPath, copyValue(DropdownFunc.Value))
         applyFilter()
-        scroll.CanvasPosition = v2(0, 0)
+        resetScroll()
         refresh()
         emit(DropdownFunc.Value)
     end
@@ -1188,17 +1205,8 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         applyFilter()
         refresh()
     end
-    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        cancelThread(searchThread)
-        searchThread = task.delay(searchBox.Text == "" and 0 or 0.08, function()
-            searchThread = nil
-            applyFilter()
-            scroll.CanvasPosition = v2(0, 0)
-            refreshVisible()
-        end)
-    end)
     openButton.Activated:Connect(function()
-        ensureRows()
+        buildPopup()
         searchBox.Text = ""
         applyFilter()
         scroll.CanvasPosition = v2(0, 0)
@@ -1286,8 +1294,10 @@ function Library:CreateButton(parent, label, callback)
     end)
     return frame
 end
--- True when `frame` is actually drawn: inside the active page and not under a collapsed section.
+-- True when `frame` is actually drawn: inside the active page, not under a collapsed section,
+-- and the window is not minimized.
 function Library:_isOnScreen(frame)
+    if self._win and not self._win.Visible then return false end
     local node, root = frame, self._contentBg
     while node and node ~= root do
         if node:IsA("GuiObject") and not node.Visible then return false end
