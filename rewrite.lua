@@ -304,6 +304,9 @@ local function saveValue(path, value)
     Config.Set(path, value)
     markDirty()
 end
+local function shouldFireOnLoad(kind, value)
+    return kind ~= "toggle" or value == true
+end
 local function registerCallback(path, callback, kind, default, updateVisual)
     if not path then return end
     if CallbackRegistry[path] then
@@ -313,7 +316,7 @@ local function registerCallback(path, callback, kind, default, updateVisual)
     if Library._initialized then
         local value = Config.Get(path, default)
         if updateVisual then safeCall("updateVisual @" .. path, updateVisual, value) end
-        fireCallback("callback @" .. path, callback, value)
+        if shouldFireOnLoad(kind, value) then fireCallback("callback @" .. path, callback, value) end
     end
 end
 local function executeConfigCallbacks()
@@ -324,8 +327,9 @@ local function executeConfigCallbacks()
     end
     for _, wantToggle in ipairs({ false, true }) do
         for _, entry in pairs(CallbackRegistry) do
-            if entry.callback and (entry.kind == "toggle") == wantToggle then
-                fireCallback("callback @" .. entry.path, entry.callback, Config.Get(entry.path, entry.default))
+            local value = Config.Get(entry.path, entry.default)
+            if entry.callback and (entry.kind == "toggle") == wantToggle and shouldFireOnLoad(entry.kind, value) then
+                fireCallback("callback @" .. entry.path, entry.callback, value)
             end
         end
     end
@@ -518,10 +522,6 @@ function Library:CreateWindow(config)
         Parent = win, ZIndex = 4, ClipsDescendants = true, BackgroundTransparency = 1,
         Size = u2(1, -(SIDEBAR_W + 6), 1, -(HEADER_H + 3)), Position = u2(0, SIDEBAR_W + 3, 0, HEADER_H + 1),
     })
-    -- Hidden tabs and closed dropdowns are parked outside the window: Roblox re-lays out every
-    -- descendant of a moved frame, Visible=false or not, so keeping them in `win` makes dragging
-    -- cost scale with the number of features. The parking frames mirror the real sizes so text
-    -- wrapping and dropdown rows are already correct when they move back in.
     local parking = new("Frame", { Parent = gui, Name = "Parking", Visible = false, BackgroundTransparency = 1 })
     self._pageParking = parking
     self._dropParking = new("Frame", { Parent = parking, BackgroundTransparency = 1 })
@@ -563,8 +563,6 @@ function Library:CreateWindow(config)
     local resizeHandle = new("TextButton", {
         Parent = win, ZIndex = 100, AnchorPoint = v2(1, 1), Size = u2(0, 18, 0, 18), Position = u2(1, 0, 1, 0),
     })
-    -- Dot triangle instead of rotated bars: any GuiObject with Rotation ~= 0 inside the window
-    -- makes every drag frame take Roblox's slow render path (~0.4 ms/frame measured).
     for _, grip in ipairs({ { -3, -3 }, { -7, -3 }, { -11, -3 }, { -3, -7 }, { -7, -7 }, { -3, -11 } }) do
         new("Frame", {
             Parent = resizeHandle, ZIndex = 101, AnchorPoint = v2(1, 1),
@@ -668,8 +666,6 @@ function Library:_createSearchBar()
             end
         end)
     end
-    -- Virtualised like the dropdowns: a one-letter query matches hundreds of features, and building
-    -- a row per match froze the client for 50-80 ms and left ~2k instances inside the window.
     local results, rows = {}, {}
     local function setRowHover(row, on)
         row.button.BackgroundTransparency = on and SECTION_T or 1
@@ -974,8 +970,6 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         AnchorPoint = v2(1, 0.5), Position = u2(1, -6, 0.5, 0), Size = u2(0, 11, 0, 11),
     })
     local openButton = new("TextButton", { Parent = frame, ZIndex = 10, Size = u2(1, 0, 1, 0) })
-    -- The popup (search box + option list) is built on first open; most dropdowns are never opened
-    -- in a session, and building them all up front was ~500 extra instances in a full script.
     local container, searchBox, scroll
     local function copyValue(v)
         if not isMulti then return v end
@@ -1294,8 +1288,6 @@ function Library:CreateButton(parent, label, callback)
     end)
     return frame
 end
--- True when `frame` is actually drawn: inside the active page, not under a collapsed section,
--- and the window is not minimized.
 function Library:_isOnScreen(frame)
     if self._win and not self._win.Visible then return false end
     local node, root = frame, self._contentBg
@@ -1305,8 +1297,6 @@ function Library:_isOnScreen(frame)
     end
     return node ~= nil
 end
--- Paragraphs that changed while off screen keep only their latest text; it is applied when
--- they show up. Re-shaping wrapped text costs ~0.13 ms per label even when hidden.
 function Library:_flushParagraphs()
     for flush in pairs(self._staleParagraphs) do
         flush()
@@ -1387,7 +1377,6 @@ function Library:CreateParagraph(parent, config)
     end
     titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
     contentLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
-    -- The first text is applied right away so the card has its real height from the start.
     latest[titleLabel], latest[contentLabel] = formatRichText(config.Title), formatRichText(config.Content)
     apply(titleLabel)
     apply(contentLabel)
