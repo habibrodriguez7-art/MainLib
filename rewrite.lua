@@ -56,7 +56,10 @@ local function corner(radius)
     return new("UICorner", { CornerRadius = radius and UDim.new(0, radius) or UDim.new(1, 0) })
 end
 local function stroke(color, transparency, thickness)
-    return new("UIStroke", { Color = color or colors.border, Transparency = transparency or 0.4, Thickness = thickness or 1 })
+    return new("UIStroke", {
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Color = color or colors.border, Transparency = transparency or 0.4, Thickness = thickness or 1,
+    })
 end
 local function fadeEnds(rotation)
     return new("UIGradient", {
@@ -68,6 +71,16 @@ local function fadeEnds(rotation)
 end
 local function cancelThread(thread)
     if thread then pcall(task.cancel, thread) end
+end
+local BUILD_BUDGET = 0.008
+local buildWork, buildLast = 0, 0
+local function paceBuild()
+    local now = os.clock()
+    if now - buildLast < 0.02 then buildWork = buildWork + (now - buildLast) else buildWork = 0 end
+    buildLast = now
+    if buildWork < BUILD_BUDGET or not coroutine.isyieldable() then return end
+    task.wait()
+    buildWork, buildLast = 0, os.clock()
 end
 local function safeCall(context, fn, ...)
     if not fn then return true end
@@ -149,6 +162,7 @@ local Library = {
     _connections  = {},
     _searchIndex  = {},
     _staleParagraphs = {},
+    _dirtyParagraphs = {},
     _connSeq      = 0,
     _initialized  = false,
 }
@@ -320,16 +334,20 @@ local function registerCallback(path, callback, kind, default, updateVisual)
     end
 end
 local function executeConfigCallbacks()
-    for _, entry in pairs(CallbackRegistry) do
+    local entries = {}
+    for _, entry in pairs(CallbackRegistry) do entries[#entries + 1] = entry end
+    for _, entry in ipairs(entries) do
         if entry.updateVisual then
             safeCall("updateVisual @" .. entry.path, entry.updateVisual, Config.Get(entry.path, entry.default))
+            paceBuild()
         end
     end
     for _, wantToggle in ipairs({ false, true }) do
-        for _, entry in pairs(CallbackRegistry) do
+        for _, entry in ipairs(entries) do
             local value = Config.Get(entry.path, entry.default)
             if entry.callback and (entry.kind == "toggle") == wantToggle and shouldFireOnLoad(entry.kind, value) then
                 fireCallback("callback @" .. entry.path, entry.callback, value)
+                paceBuild()
             end
         end
     end
@@ -365,6 +383,7 @@ function Library:Cleanup()
     table.clear(self._navButtons)
     table.clear(self._searchIndex)
     table.clear(self._staleParagraphs)
+    table.clear(self._dirtyParagraphs)
     self._gui, self._win, self._currentPage = nil, nil, nil
     self._pageParking, self._dropParking = nil, nil
     self._dropdown, self._openDropdown = nil, nil
@@ -413,6 +432,11 @@ local function trackDrag(handle, onStart, onMove, onEnd)
             UserInputService.WindowFocusReleased:Connect(cancel),
         }
     end)
+end
+local PAGE_SIZE = u2(1, -12, 1, -(TOPBAR_H + 10))
+local function freezePage(frame)
+    local size = frame.Parent.AbsoluteSize
+    frame.Size = u2(0, math.max(0, size.X - 12), 0, math.max(0, size.Y - (TOPBAR_H + 10)))
 end
 function Library:CreateWindow(config)
     config = config or {}
@@ -472,22 +496,14 @@ function Library:CreateWindow(config)
         Parent = header, ZIndex = 6, Text = config.Subtitle or "", Size = u2(0, 200, 1, 0), Position = u2(0, 96, 0, 0),
         TextColor3 = colors.textDim,
     })
-    local minStroke = stroke()
     local minBtn = new("TextButton", {
         Parent = header, ZIndex = 7, Size = u2(0, 22, 0, 22), Position = u2(1, -28, 0.5, -11),
         BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
-    }, { corner(5), minStroke })
-    local minLine = new("Frame", {
+    }, { corner(5) })
+    new("Frame", {
         Parent = minBtn, ZIndex = 8, AnchorPoint = v2(0.5, 0.5), Position = u2(0.5, 0, 0.5, 0),
         Size = u2(0, 10, 0, 2), BackgroundColor3 = colors.primary,
     }, { corner() })
-    local function setMinHover(on)
-        minBtn.BackgroundColor3 = on and colors.bg3 or colors.bg2
-        minStroke.Color = on and colors.primary or colors.border
-        minStroke.Transparency = on and 0.1 or 0.4
-        minLine.Size = u2(0, on and 12 or 10, 0, 2)
-    end
-    onHover(minBtn, function() setMinHover(true) end, function() setMinHover(false) end)
     local discordLink, discordText = "https://discord.gg/lynxx", "discord.gg/lynxx"
     local discordTextW = math.ceil(TextService:GetTextSize(discordText, FONT.small, BOLD, v2(1000, 100)).X)
     local discordW = discordTextW + 42
@@ -502,13 +518,10 @@ function Library:CreateWindow(config)
         Parent = discordBtn, ZIndex = 8, Size = u2(0, 1, 0, 12), Position = u2(0, 28, 0.5, -6),
         BackgroundColor3 = colors.primary, BackgroundTransparency = 0.45,
     }, { fadeEnds(90) })
-    local discordLabel = new("TextLabel", {
+    new("TextLabel", {
         Parent = discordBtn, ZIndex = 8, Text = discordText, TextColor3 = colors.primary,
         TextTruncate = Enum.TextTruncate.AtEnd, Size = u2(0, discordTextW + 2, 1, 0), Position = u2(0, 33, 0, 0),
     })
-    onHover(discordBtn,
-        function() discordLabel.TextColor3 = colors.text end,
-        function() discordLabel.TextColor3 = colors.primary end)
     discordBtn.MouseButton1Click:Connect(function()
         local clip = setclipboard or toclipboard or writeclipboard
             or (Clipboard and Clipboard.set) or (clipboard and clipboard.set)
@@ -527,8 +540,7 @@ function Library:CreateWindow(config)
     self._dropParking = new("Frame", { Parent = parking, BackgroundTransparency = 1 })
     local resizing = false
     local function syncParking()
-        local content, winSize = self._contentBg.AbsoluteSize, win.AbsoluteSize
-        parking.Size = u2(0, content.X, 0, content.Y)
+        local winSize = win.AbsoluteSize
         self._dropParking.Size = u2(0, 160, 0, math.max(0, winSize.Y - HEADER_H - 16))
     end
     syncParking()
@@ -570,17 +582,31 @@ function Library:CreateWindow(config)
             BackgroundColor3 = colors.textDim, BackgroundTransparency = 0.35,
         })
     end
-    local sizeStart
+    local sizeStart, frozenPage, frozenW, frozenH
     trackDrag(resizeHandle, function()
         sizeStart, resizing = win.AbsoluteSize, true
+        local page = self.pages[self._currentPage]
+        frozenPage = page and page.frame
+        if frozenPage then
+            freezePage(frozenPage)
+            frozenW, frozenH = frozenPage.Size.X.Offset, frozenPage.Size.Y.Offset
+        end
     end, function(delta)
-        win.Size = u2(
-            0, math.clamp(sizeStart.X + delta.X, minSize.X, MAX_SIZE.X),
-            0, math.clamp(sizeStart.Y + delta.Y, minSize.Y, MAX_SIZE.Y)
-        )
+        local w = math.clamp(sizeStart.X + delta.X, minSize.X, MAX_SIZE.X)
+        local h = math.clamp(sizeStart.Y + delta.Y, minSize.Y, MAX_SIZE.Y)
+        win.Size = u2(0, w, 0, h)
+        if not frozenPage then return end
+        local pageW = w - (SIDEBAR_W + 6) - 12
+        local pageH = h - (HEADER_H + 3) - (TOPBAR_H + 10)
+        if pageW < frozenW or pageH < frozenH then
+            frozenW, frozenH = math.max(0, math.min(frozenW, pageW)), math.max(0, math.min(frozenH, pageH))
+            frozenPage.Size = u2(0, frozenW, 0, frozenH)
+        end
     end, function()
         resizing = false
         syncParking()
+        if frozenPage and frozenPage.Visible then frozenPage.Size = PAGE_SIZE end
+        frozenPage = nil
     end)
     local icon, iconPos = nil, u2(0, 20, 0, 100)
     minBtn.MouseButton1Click:Connect(function()
@@ -617,12 +643,11 @@ function Library:_createSearchBar()
     local PANEL_W, ROW_H, ROW_GAP, LIST_PAD, MAX_PANEL_H = 230, 32, 2, 4, 200
     local ROW_STRIDE = ROW_H + ROW_GAP
     local POOL_SIZE = math.ceil(MAX_PANEL_H / ROW_STRIDE) + 1
-    local searchStroke = stroke()
     local container = new("Frame", {
         Parent = self._sidebar, Name = "SearchBar", ZIndex = 7,
         Size = u2(0, SEARCH_W, 0, SEARCH_H), Position = u2(0, 6, 0, 6),
         BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
-    }, { corner(5), searchStroke })
+    }, { corner(5), stroke() })
     new("ImageLabel", {
         Parent = container, ZIndex = 8, Image = "rbxassetid://109869955247116", ImageColor3 = colors.textDimmer,
         Size = u2(0, 14, 0, 14), Position = u2(0, 6, 0.5, -7),
@@ -752,12 +777,6 @@ function Library:_createSearchBar()
             doSearch(text)
         end)
     end)
-    searchBox.Focused:Connect(function()
-        searchStroke.Color, searchStroke.Transparency = colors.primary, 0.1
-    end)
-    searchBox.FocusLost:Connect(function()
-        searchStroke.Color, searchStroke.Transparency = colors.border, 0.4
-    end)
     clearBtn.MouseButton1Click:Connect(function() searchBox.Text = "" end)
     onHover(clearBtn,
         function() clearBtn.TextColor3 = colors.primary end,
@@ -768,9 +787,10 @@ function Library:CreatePage(name, title, imageId, order)
         warn(("[LynxGUI] Nama tab duplikat -> '%s'. Tab lama akan tertimpa; pakai nama tab yang unik."):format(tostring(name)))
     end
     local page = new("Frame", {
-        Parent = self._pageParking, ZIndex = 5, Visible = false, ClipsDescendants = true, BackgroundTransparency = 1,
-        Size = u2(1, -12, 1, -(TOPBAR_H + 10)), Position = u2(0, 6, 0, TOPBAR_H + 6),
+        Parent = self._contentBg, ZIndex = 5, Visible = false, ClipsDescendants = true, BackgroundTransparency = 1,
+        Size = PAGE_SIZE, Position = u2(0, 6, 0, TOPBAR_H + 6),
     })
+    freezePage(page)
     local content = new("ScrollingFrame", {
         Parent = page, ZIndex = 5, Size = u2(1, 0, 1, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -807,12 +827,15 @@ function Library:SetFirstPage(name, title)
 end
 function Library:_switchPage(name)
     if self._currentPage == name or not self.pages[name] then return end
-    self._currentPage = name
-    for pageName, page in pairs(self.pages) do
-        local active = pageName == name
-        page.frame.Visible = active
-        page.frame.Parent = active and self._contentBg or self._pageParking
+    local previous = self.pages[self._currentPage]
+    if previous then
+        previous.frame.Visible = false
+        freezePage(previous.frame)
     end
+    self._currentPage = name
+    local current = self.pages[name].frame
+    current.Size = PAGE_SIZE
+    current.Visible = true
     for pageName, nav in pairs(self._navButtons) do
         local active = pageName == name
         nav.btn.BackgroundTransparency = active and SECTION_T or 1
@@ -1009,6 +1032,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
             if query == "" or opt.lower:find(query, 1, true) then filtered[#filtered + 1] = opt end
         end
     end
+    local shownLabel = defaultText
     local function updateSelection()
         table.clear(selectedSet)
         if isMulti then
@@ -1031,7 +1055,11 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         elseif DropdownFunc.Value ~= nil then
             text = labelByValue[DropdownFunc.Value] or tostring(DropdownFunc.Value)
         end
-        selectedLabel.Text = text or defaultText
+        text = text or defaultText
+        if shownLabel ~= text then
+            shownLabel = text
+            selectedLabel.Text = text
+        end
     end
     local function paintRow(row, opt, force)
         local selected = selectedSet[opt.value] == true
@@ -1262,7 +1290,8 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback, 
             callback(resolveInput(value))
         end, "input", defaultValue, function(value)
             if value == nil then value = defaultValue end
-            textBox.Text = value ~= nil and tostring(value) or ""
+            local text = value ~= nil and tostring(value) or ""
+            if textBox.Text ~= text then textBox.Text = text end
         end)
     else
         fireCallback(context, callback, resolveInput(initial))
@@ -1302,6 +1331,35 @@ function Library:_flushParagraphs()
         flush()
     end
 end
+local PARAGRAPH_INTERVAL, PARAGRAPH_BUDGET = 0.1, 0.001
+function Library:_queueParagraph(flush)
+    self._dirtyParagraphs[flush] = true
+    if self._paragraphFlushQueued then return end
+    self._paragraphFlushQueued = true
+    local batch, index
+    local function run()
+        if not batch then
+            batch, index = {}, 1
+            for queued in pairs(self._dirtyParagraphs) do batch[#batch + 1] = queued end
+            table.clear(self._dirtyParagraphs)
+        end
+        local deadline = os.clock() + PARAGRAPH_BUDGET
+        while index <= #batch do
+            if os.clock() > deadline then
+                task.delay(0, run)
+                return
+            end
+            batch[index]()
+            index = index + 1
+        end
+        self._paragraphFlushQueued = false
+        self._lastParagraphFlush = os.clock()
+        local pending = next(self._dirtyParagraphs)
+        if pending then self:_queueParagraph(pending) end
+    end
+    local wait = (self._lastParagraphFlush or 0) + PARAGRAPH_INTERVAL - os.clock()
+    if wait > 0 then task.delay(wait, run) else task.defer(run) end
+end
 function Library:CreateParagraph(parent, config)
     local GAP, PAD_TOP, PAD_BOTTOM, PAD_LEFT, PAD_RIGHT = 3, 7, 8, 10, 10
     local frame = new("Frame", {
@@ -1317,18 +1375,22 @@ function Library:CreateParagraph(parent, config)
         }),
         new("UIListLayout", { Padding = UDim.new(0, GAP), SortOrder = Enum.SortOrder.LayoutOrder }),
     })
+    local allowRich = config.RichText ~= false
     local function makeLabel(order, font, size, color, minHeight)
         return new("TextLabel", {
             Parent = body, ZIndex = 9, LayoutOrder = order, Font = font, TextSize = size, TextColor3 = color,
-            TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, RichText = config.RichText ~= false,
+            TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, RichText = false, Visible = false,
             Size = u2(1, 0, 0, minHeight),
         })
     end
     local titleLabel = makeLabel(1, BOLD, FONT.normal, colors.text, 14)
     local contentLabel = makeLabel(2, MEDIUM, FONT.small, colors.textDim, 12)
     contentLabel.LineHeight = 1.1
+    local labels = { titleLabel, contentLabel }
     local minHeights = { [titleLabel] = 14, [contentLabel] = 12 }
-    local latest = { [titleLabel] = "", [contentLabel] = "" }
+    local raw, latest = {}, { [titleLabel] = "", [contentLabel] = "" }
+    local shown, rich, heights = { [titleLabel] = "", [contentLabel] = "" }, {}, {}
+    local frameHeight
     local reflowQueued = false
     local function reflow()
         if reflowQueued then return end
@@ -1336,23 +1398,36 @@ function Library:CreateParagraph(parent, config)
         task.defer(function()
             reflowQueued = false
             if not frame.Parent then return end
-            local total, shown = PAD_TOP + PAD_BOTTOM, 0
-            for _, lbl in ipairs({ titleLabel, contentLabel }) do
-                if lbl.Visible then
+            local total, count = PAD_TOP + PAD_BOTTOM, 0
+            for _, lbl in ipairs(labels) do
+                if shown[lbl] ~= "" then
                     local h = math.max(lbl.TextBounds.Y, minHeights[lbl])
-                    lbl.Size = u2(1, 0, 0, h)
+                    if heights[lbl] ~= h then
+                        heights[lbl] = h
+                        lbl.Size = u2(1, 0, 0, h)
+                    end
                     total = total + h
-                    shown = shown + 1
+                    count = count + 1
                 end
             end
-            frame.Size = u2(1, 0, 0, total + math.max(0, shown - 1) * GAP)
+            total = total + math.max(0, count - 1) * GAP
+            if frameHeight ~= total then
+                frameHeight = total
+                frame.Size = u2(1, 0, 0, total)
+            end
         end)
     end
     local function apply(lbl)
-        local text = latest[lbl]
-        if lbl.Text == text then return end
+        local text, old = latest[lbl], shown[lbl]
+        if old == text then return end
+        shown[lbl] = text
+        local wantRich = allowRich and text:find("[<&]") ~= nil
+        if rich[lbl] ~= wantRich then
+            rich[lbl] = wantRich
+            lbl.RichText = wantRich
+        end
         lbl.Text = text
-        lbl.Visible = text ~= ""
+        if (old == "") ~= (text == "") then lbl.Visible = text ~= "" end
         reflow()
     end
     local function flush()
@@ -1360,27 +1435,28 @@ function Library:CreateParagraph(parent, config)
             self._staleParagraphs[flush] = nil
             return
         end
-        if not self:_isOnScreen(frame) then return end
+        if not self:_isOnScreen(frame) then
+            self._staleParagraphs[flush] = true
+            return
+        end
         self._staleParagraphs[flush] = nil
         apply(titleLabel)
         apply(contentLabel)
     end
     local function setText(lbl, text)
+        if raw[lbl] == text then return end
+        raw[lbl] = text
         text = formatRichText(text)
         if latest[lbl] == text then return end
         latest[lbl] = text
-        if self:_isOnScreen(frame) then
-            apply(lbl)
-        else
-            self._staleParagraphs[flush] = true
-        end
+        self:_queueParagraph(flush)
     end
     titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
     contentLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
+    raw[titleLabel], raw[contentLabel] = config.Title, config.Content
     latest[titleLabel], latest[contentLabel] = formatRichText(config.Title), formatRichText(config.Content)
     apply(titleLabel)
     apply(contentLabel)
-    titleLabel.Visible, contentLabel.Visible = titleLabel.Text ~= "", contentLabel.Text ~= ""
     return {
         _frame = frame,
         _titleLabel = titleLabel,
@@ -1700,6 +1776,7 @@ local function createSection(lib, page, tabName, sectionTitle, isOpen)
                 pageName = tabName, sectionTitle = sectionTitle, expand = expand,
             })
         end
+        paceBuild()
     end
     function Section:AddToggle(cfg)
         cfg = cfg or {}
@@ -1766,9 +1843,11 @@ local function createSection(lib, page, tabName, sectionTitle, isOpen)
 end
 function Library:Window(config)
     config = config or {}
+    buildWork, buildLast = 0, os.clock()
     self:CreateWindow({ Name = "LynxGui", Title = config.Title or "LynX", Subtitle = config.Footer or "" })
     if config.ConfigId ~= nil then Config.SetConfigId(config.ConfigId) end
     Config.Load()
+    paceBuild()
     local lib = self
     local Window = { _library = lib, _tabs = {}, _tabOrder = 0 }
     lib._pendingWindow = Window
@@ -1788,10 +1867,12 @@ function Library:Window(config)
         function Tab:AddSection(sectionTitle, isOpen)
             local section = createSection(lib, page, tabName, tostring(sectionTitle or "Section"), isOpen)
             table.insert(self._sections, section)
+            paceBuild()
             return section
         end
         if self._tabOrder == 1 then lib:SetFirstPage(tabName) end
         table.insert(self._tabs, Tab)
+        paceBuild()
         return Tab
     end
     return Window
