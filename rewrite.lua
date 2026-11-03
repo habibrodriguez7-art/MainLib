@@ -1363,72 +1363,34 @@ end
 function Library:CreateParagraph(parent, config)
     local GAP, PAD_TOP, PAD_BOTTOM, PAD_LEFT, PAD_RIGHT = 3, 7, 8, 10, 10
     local frame = new("Frame", {
-        Parent = parent, ZIndex = 7, Size = u2(1, 0, 0, PAD_TOP + PAD_BOTTOM + 12),
+        Parent = parent, ZIndex = 7, Size = u2(1, 0, 0, PAD_TOP + PAD_BOTTOM + 12), AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
-    }, { corner(4), stroke(nil, 0.5) })
-    local body = new("Frame", {
-        Parent = frame, ZIndex = 8, Size = u2(1, 0, 1, 0), BackgroundTransparency = 1,
     }, {
+        corner(4), stroke(nil, 0.5),
         new("UIPadding", {
             PaddingTop = UDim.new(0, PAD_TOP), PaddingBottom = UDim.new(0, PAD_BOTTOM),
             PaddingLeft = UDim.new(0, PAD_LEFT), PaddingRight = UDim.new(0, PAD_RIGHT),
         }),
         new("UIListLayout", { Padding = UDim.new(0, GAP), SortOrder = Enum.SortOrder.LayoutOrder }),
     })
-    local allowRich = config.RichText ~= false
     local function makeLabel(order, font, size, color, minHeight)
         return new("TextLabel", {
-            Parent = body, ZIndex = 9, LayoutOrder = order, Font = font, TextSize = size, TextColor3 = color,
-            TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, RichText = false, Visible = false,
-            Size = u2(1, 0, 0, minHeight),
+            Parent = frame, ZIndex = 9, LayoutOrder = order, Font = font, TextSize = size, TextColor3 = color,
+            TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, RichText = config.RichText ~= false,
+            Visible = false, Size = u2(1, 0, 0, minHeight), AutomaticSize = Enum.AutomaticSize.Y,
         })
     end
     local titleLabel = makeLabel(1, BOLD, FONT.normal, colors.text, 14)
     local contentLabel = makeLabel(2, MEDIUM, FONT.small, colors.textDim, 12)
     contentLabel.LineHeight = 1.1
-    local labels = { titleLabel, contentLabel }
-    local minHeights = { [titleLabel] = 14, [contentLabel] = 12 }
     local raw, latest = {}, { [titleLabel] = "", [contentLabel] = "" }
-    local shown, rich, heights = { [titleLabel] = "", [contentLabel] = "" }, {}, {}
-    local frameHeight
-    local reflowQueued = false
-    local function reflow()
-        if reflowQueued then return end
-        reflowQueued = true
-        task.defer(function()
-            reflowQueued = false
-            if not frame.Parent then return end
-            local total, count = PAD_TOP + PAD_BOTTOM, 0
-            for _, lbl in ipairs(labels) do
-                if shown[lbl] ~= "" then
-                    local h = math.max(lbl.TextBounds.Y, minHeights[lbl])
-                    if heights[lbl] ~= h then
-                        heights[lbl] = h
-                        lbl.Size = u2(1, 0, 0, h)
-                    end
-                    total = total + h
-                    count = count + 1
-                end
-            end
-            total = total + math.max(0, count - 1) * GAP
-            if frameHeight ~= total then
-                frameHeight = total
-                frame.Size = u2(1, 0, 0, total)
-            end
-        end)
-    end
+    local shown = { [titleLabel] = "", [contentLabel] = "" }
     local function apply(lbl)
         local text, old = latest[lbl], shown[lbl]
         if old == text then return end
         shown[lbl] = text
-        local wantRich = allowRich and text:find("[<&]") ~= nil
-        if rich[lbl] ~= wantRich then
-            rich[lbl] = wantRich
-            lbl.RichText = wantRich
-        end
         lbl.Text = text
         if (old == "") ~= (text == "") then lbl.Visible = text ~= "" end
-        reflow()
     end
     local function flush()
         if not frame.Parent then
@@ -1451,8 +1413,6 @@ function Library:CreateParagraph(parent, config)
         latest[lbl] = text
         self:_queueParagraph(flush)
     end
-    titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
-    contentLabel:GetPropertyChangedSignal("TextBounds"):Connect(reflow)
     raw[titleLabel], raw[contentLabel] = config.Title, config.Content
     latest[titleLabel], latest[contentLabel] = formatRichText(config.Title), formatRichText(config.Content)
     apply(titleLabel)
