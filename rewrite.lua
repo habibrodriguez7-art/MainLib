@@ -42,54 +42,26 @@ for class, props in pairs(DEFAULTS) do
         for k, v in pairs(TEXT_DEFAULTS) do props[k] = v end
     end
 end
--- Performance style: tanpa corner/stroke/gradient/ikon/hover dan tanpa latar semi-transparan.
-local perf = false
-local function bgT(t)
-    if perf and t > 0 and t < 1 then return t >= 0.5 and 1 or 0 end
-    return t
-end
 local function new(class, props, children)
     local inst = Instance.new(class)
     for k, v in pairs(DEFAULTS[class] or {}) do inst[k] = v end
     for k, v in pairs(props) do
-        if k == "BackgroundTransparency" then v = bgT(v) end
         if k ~= "Parent" then inst[k] = v end
     end
-    for _, child in ipairs(children or {}) do
-        if child then child.Parent = inst end
-    end
+    for _, child in ipairs(children or {}) do child.Parent = inst end
     inst.Parent = props.Parent
     return inst
 end
--- Dekorasi mengembalikan false di Performance supaya dilewati oleh new().
 local function corner(radius)
-    if perf then return false end
     return new("UICorner", { CornerRadius = radius and UDim.new(0, radius) or UDim.new(1, 0) })
 end
 local function stroke(color, transparency, thickness)
-    if perf then return false end
     return new("UIStroke", {
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
         Color = color or colors.border, Transparency = transparency or 0.4, Thickness = thickness or 1,
     })
 end
-local function decorImage(props)
-    if perf then return nil end
-    return new("ImageLabel", props)
-end
-local function stripDecor(root)
-    for _, d in ipairs(root:GetDescendants()) do
-        if d:IsA("UICorner") or d:IsA("UIStroke") or d:IsA("UIGradient") then
-            d:Destroy()
-        elseif d:IsA("ImageLabel") then
-            d.Visible = false
-        elseif d:IsA("GuiObject") then
-            d.BackgroundTransparency = bgT(d.BackgroundTransparency)
-        end
-    end
-end
 local function fadeEnds(rotation)
-    if perf then return false end
     return new("UIGradient", {
         Rotation = rotation or 0,
         Transparency = NumberSequence.new({
@@ -124,10 +96,8 @@ local function isPress(input)
     return t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch
 end
 local function onHover(guiObject, enter, leave)
-    if isMobile or perf then return end
-    guiObject.MouseEnter:Connect(function()
-        if not perf then enter() end
-    end)
+    if isMobile then return end
+    guiObject.MouseEnter:Connect(enter)
     guiObject.MouseLeave:Connect(leave)
 end
 local function getGuiParent()
@@ -209,18 +179,6 @@ end
 local CONFIG_FOLDER = "LynxGUI_Configs"
 local LEGACY_FILE   = CONFIG_FOLDER .. "/lynx_config.json"
 local LEGACY_BACKUP = CONFIG_FOLDER .. "/lynx_config.backup.json"
-local STYLE_FILE    = CONFIG_FOLDER .. "/ui_style.txt"
-local STYLES = { Quality = true, Performance = true }
-local function readStyle()
-    local ok, style = pcall(function() return isfile(STYLE_FILE) and readfile(STYLE_FILE) end)
-    return ok and STYLES[style] and style or nil
-end
-local function writeStyle(style)
-    pcall(function()
-        if isfolder and makefolder and not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
-        writefile(STYLE_FILE, style)
-    end)
-end
 local COMPONENT_PREFIXES = { "Toggles", "Dropdowns", "MultiDropdowns", "Inputs" }
 local Config        = Library.ConfigSystem
 local CurrentConfig, DefaultConfig = {}, {}
@@ -526,7 +484,7 @@ function Library:CreateWindow(config)
         Parent = header, ZIndex = 6, Text = config.Title or "LynX", Size = u2(0, 80, 1, 0), Position = u2(0, 12, 0, 0),
         TextSize = FONT.title, TextColor3 = colors.primary,
     })
-    decorImage({
+    new("ImageLabel", {
         Parent = header, ZIndex = 6, Image = "rbxassetid://104332967321169", ImageColor3 = colors.primary,
         Size = u2(0, 16, 0, 16), Position = u2(0, 58, 0.5, -8),
     })
@@ -552,7 +510,7 @@ function Library:CreateWindow(config)
     local discordBtn = new("TextButton", {
         Parent = header, ZIndex = 7, Size = u2(0, discordW, 0, 22), Position = u2(1, -(34 + discordW), 0.5, -11),
     })
-    decorImage({
+    new("ImageLabel", {
         Parent = discordBtn, ZIndex = 8, Image = "rbxthumb://type=Asset&id=84640740142415&w=150&h=150",
         ImageColor3 = colors.primary, Size = u2(0, 15, 0, 15), Position = u2(0, 8, 0.5, -7.5),
     })
@@ -690,7 +648,7 @@ function Library:_createSearchBar()
         Size = u2(0, SEARCH_W, 0, SEARCH_H), Position = u2(0, 6, 0, 6),
         BackgroundColor3 = colors.bg2, BackgroundTransparency = SECTION_T,
     }, { corner(5), stroke() })
-    decorImage({
+    new("ImageLabel", {
         Parent = container, ZIndex = 8, Image = "rbxassetid://109869955247116", ImageColor3 = colors.textDimmer,
         Size = u2(0, 14, 0, 14), Position = u2(0, 6, 0.5, -7),
     })
@@ -735,7 +693,7 @@ function Library:_createSearchBar()
     end
     local results, rows = {}, {}
     local function setRowHover(row, on)
-        row.button.BackgroundTransparency = bgT(on and SECTION_T or 1)
+        row.button.BackgroundTransparency = on and SECTION_T or 1
     end
     local function buildRow()
         local button = new("TextButton", {
@@ -852,12 +810,12 @@ function Library:CreatePage(name, title, imageId, order)
             BackgroundColor3 = colors.primary,
         }, { corner() }),
         icon = new("ImageLabel", {
-            Parent = btn, ZIndex = 7, Image = perf and "" or imageId or "", Visible = not perf, ImageColor3 = colors.textDim,
+            Parent = btn, ZIndex = 7, Image = imageId or "", ImageColor3 = colors.textDim,
             Size = u2(0, 15, 0, 15), Position = u2(0, 8, 0.5, -7),
         }),
         label = new("TextLabel", {
             Parent = btn, ZIndex = 7, Text = name, TextSize = FONT.normal, TextColor3 = colors.textDim,
-            Size = u2(1, perf and -17 or -35, 1, 0), Position = u2(0, perf and 10 or 28, 0, 0),
+            Size = u2(1, -35, 1, 0), Position = u2(0, 28, 0, 0),
         }),
     }
     btn.MouseButton1Click:Connect(function() self:_switchPage(name) end)
@@ -880,7 +838,7 @@ function Library:_switchPage(name)
     current.Visible = true
     for pageName, nav in pairs(self._navButtons) do
         local active = pageName == name
-        nav.btn.BackgroundTransparency = bgT(active and SECTION_T or 1)
+        nav.btn.BackgroundTransparency = active and SECTION_T or 1
         nav.icon.ImageColor3 = active and colors.primary or colors.textDim
         nav.label.TextColor3 = active and colors.text or colors.textDim
         nav.indicator.Visible = active
@@ -1030,7 +988,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         Parent = selectFrame, ZIndex = 9, Text = defaultText, TextColor3 = colors.textDim,
         TextTruncate = Enum.TextTruncate.AtEnd, AnchorPoint = v2(0, 0.5), Position = u2(0, 8, 0.5, 0), Size = u2(1, -24, 1, 0),
     })
-    decorImage({
+    new("ImageLabel", {
         Parent = selectFrame, ZIndex = 9, Image = "rbxassetid://6031091004", ImageColor3 = colors.primary,
         AnchorPoint = v2(1, 0.5), Position = u2(1, -6, 0.5, 0), Size = u2(0, 11, 0, 11),
     })
@@ -1109,7 +1067,7 @@ function Library:_createBaseDropdown(parent, title, _imageId, items, configPath,
         row.opt, row.selected = opt, selected
         row.choose.Size = selected and u2(0, 3, 0, 16) or u2(0, 0, 0, 0)
         row.frame.BackgroundColor3 = selected and colors.bg3 or colors.bg2
-        row.frame.BackgroundTransparency = bgT(selected and PANEL_T or 0.5)
+        row.frame.BackgroundTransparency = selected and PANEL_T or 0.5
         row.text.TextColor3 = selected and colors.text or colors.textDim
         row.text.Text = opt.label
     end
@@ -1578,17 +1536,14 @@ function Library:_getNotifyUI()
         Parent = ui.card, ZIndex = 3, Text = "×", TextSize = 14, TextColor3 = colors.textDimmer,
         AnchorPoint = v2(1, 0.5), Size = u2(0, 18, 0, 18), Position = u2(1, -6, 0, midY),
     })
-    if not isMobile then
-        ui.card.MouseEnter:Connect(function()
-            ui.hovered = true
-            self:_scheduleNotify()
-        end)
-        ui.card.MouseLeave:Connect(function()
-            if not ui.hovered then return end
-            ui.hovered = false
-            self:_scheduleNotify()
-        end)
-    end
+    onHover(ui.card, function()
+        ui.hovered = true
+        self:_scheduleNotify()
+    end, function()
+        if not ui.hovered then return end
+        ui.hovered = false
+        self:_scheduleNotify()
+    end)
     ui.closeBtn.MouseButton1Click:Connect(function() self:_hideNotify() end)
     onHover(ui.closeBtn,
         function() ui.closeBtn.TextColor3 = colors.text end,
@@ -1684,20 +1639,6 @@ local function addConfirmButton(section, title, confirmColor, onConfirm)
 end
 function Library:_createConfigTab(window)
     local tab = window:AddTab({ Name = "Config", Icon = "loop" })
-    local styleSection = tab:AddSection("UI Style")
-    styleSection:AddDropdown({
-        Title = "UI Style",
-        Options = { "Quality", "Performance" },
-        Default = self._style,
-        NoSave = true,
-        Callback = function(style) self:SetStyle(style) end,
-    })
-    styleSection:AddParagraph({
-        Title = "Info",
-        Content = "Quality: tampilan lengkap.\n"
-            .. "Performance: tanpa sudut bulat, garis tepi, ikon, dan efek hover supaya jauh lebih ringan di device low-end.\n"
-            .. "Pilihan disimpan untuk semua game.",
-    })
     tab:AddSection("Auto Save"):AddToggle({
         Title = "Auto Save Config",
         Default = true,
@@ -1860,25 +1801,9 @@ local function createSection(lib, page, tabName, sectionTitle, isOpen)
     end
     return Section
 end
-function Library:SetStyle(style)
-    if not STYLES[style] or style == self._style then return end
-    self._style = style
-    writeStyle(style)
-    if style == "Performance" then
-        perf = true
-        if self._gui then stripDecor(self._gui) end
-        local ui = self._notifUI
-        if ui and ui.gui.Parent then stripDecor(ui.gui) end
-        self:MakeNotify({ Title = "UI Style", Description = "Mode Performance aktif." })
-    else
-        self:MakeNotify({ Title = "UI Style", Description = "Mode Quality dipakai setelah script dijalankan ulang.", Delay = 5 })
-    end
-end
 function Library:Window(config)
     config = config or {}
     buildWork, buildLast = 0, os.clock()
-    self._style = readStyle() or (STYLES[config.Style] and config.Style) or "Quality"
-    perf = self._style == "Performance"
     self:CreateWindow({ Name = "LynxGui", Title = config.Title or "LynX", Subtitle = config.Footer or "" })
     if config.ConfigId ~= nil then Config.SetConfigId(config.ConfigId) end
     Config.Load()
