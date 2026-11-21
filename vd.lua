@@ -238,7 +238,10 @@ function Library.ConfigSystem.Get(path, default)
         if type(value) ~= "table" then return default end
         value = value[key]
     end
-    return value ~= nil and value or default
+    -- Dulu "value ~= nil and value or default": nilai false yang tersimpan ikut diganti
+    -- default, jadi toggle ber-Default true (mis. Stay Active) selalu ON lagi setelah reload.
+    if value == nil then return default end
+    return value
 end
 function Library.ConfigSystem.Set(path, value)
     if not path then return end
@@ -806,7 +809,7 @@ function Library:CreateWindow(config)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             bringToFront()
             dragging, dragStart, startPos = true, input.Position, self._win.Position
-            lastX, lastY = nil, nil 
+            lastX, lastY = nil, nil
             ensureMoveConn()
         end
     end))
@@ -1387,8 +1390,11 @@ function Library:CreateCategory(parent, title, startOpen, isLocked)
             TextXAlignment = Enum.TextXAlignment.Center,
             ZIndex = 21
         })
+        blocker.MouseButton1Click:Connect(function()
+            self:MakeNotify({Title = "Premium", Description = "Fitur ini khusus Premium.", Delay = 2})
+        end)
     end
-    
+
     return returnedContainer, expand
 end
 function Library:CreateToggle(parent, label, configPath, callback, disableSave, defaultValue)
@@ -1449,6 +1455,11 @@ function Library:CreateToggle(parent, label, configPath, callback, disableSave, 
             updateVisual()
             self.flags[configPath or label] = on
         end)
+        -- Toggle yang dibuat SETELAH Build() tidak ikut ExecuteConfigCallbacks: dulu terlihat ON
+        -- (dari config) tapi fiturnya tidak pernah jalan.
+        if Library._initialized and on and callback then
+            task.spawn(pcall, callback, on)
+        end
     end
     self.flags[configPath or label] = on
     local toggleController = {
@@ -2164,14 +2175,30 @@ function Library:CreateInput(parent, label, configPath, defaultValue, callback)
         end
         if callback then callback(value) end
     end))
-    RegisterCallback(configPath, callback, "input", defaultValue, function(val)
+    -- Nilai dari config di-resolve sama seperti saat diketik (angka -> number).
+    local registeredCb = callback and function(v)
+        callback(resolveValue(tostring(v ~= nil and v or "")))
+    end or nil
+    RegisterCallback(configPath, registeredCb, "input", defaultValue, function(val)
         inputBox.Text = tostring(val ~= nil and val or defaultValue or "")
     end)
-    if callback then
+    -- Yang punya configPath dijalankan ExecuteConfigCallbacks saat Build(); dulu dipanggil
+    -- juga di sini sehingga callback jalan 2x saat load.
+    if callback and (not configPath or Library._initialized) then
         local resolved = resolveValue(tostring(initialValue))
         callback(resolved)
     end
-    return frame
+    local controller = { frame = frame }
+    function controller.set(val)
+        inputBox.Text = val ~= nil and tostring(val) or ""
+        local value = resolveValue(inputBox.Text)
+        if configPath then
+            Library.ConfigSystem.Set(configPath, value)
+            MarkDirty()
+        end
+        if callback then callback(value) end
+    end
+    return frame, controller
 end
 
 function Library:CreateBind(parent, label, configPath, defaultValue, callback)
@@ -2249,12 +2276,23 @@ function Library:CreateBind(parent, label, configPath, defaultValue, callback)
     RegisterCallback(configPath, callback, "bind", defaultValue, function(val)
         bindBtn.Text = tostring(val ~= nil and val or defaultValue or "None")
     end)
-    
-    if callback and initialValue ~= nil then
+
+    -- Sama seperti CreateInput: yang punya configPath dijalankan saat Build(), jangan 2x.
+    if callback and initialValue ~= nil and (not configPath or Library._initialized) then
         callback(tostring(initialValue))
     end
-    
-    return frame
+
+    local controller = { frame = frame }
+    function controller.set(val)
+        local kName = (val ~= nil and tostring(val) ~= "") and tostring(val) or "None"
+        bindBtn.Text = kName
+        if configPath then
+            Library.ConfigSystem.Set(configPath, kName)
+            MarkDirty()
+        end
+        if callback then callback(kName) end
+    end
+    return frame, controller
 end
 function Library:CreateButton(parent, label, callback)
     local btnFrame = new("Frame", {
@@ -2649,6 +2687,21 @@ function Library:Window(config)
             SectionObject._container  = category
             SectionObject._library    = self._library
             SectionObject._layoutOrder = 0
+            -- Section terkunci (Premium): dulu hanya ditutup panel "Buy Premium", tapi semua
+            -- komponen di dalamnya tetap aktif. Callback tetap terdaftar ke config, jadi fitur
+            -- yang tersimpan ON (config dipakai bersama versi Premium) langsung jalan saat load,
+            -- dan toggle:SetValue() dari tombol shortcut / hotkey tetap menjalankan fiturnya.
+            -- Sekarang komponen di section terkunci tidak punya callback, tidak membaca/menyimpan
+            -- config, dan SetValue diabaikan.
+            local locked = isLocked == true
+            SectionObject._locked = locked
+            local function lockedNotice()
+                Library:MakeNotify({
+                    Title       = "Premium",
+                    Description = "Fitur ini khusus Premium.",
+                    Delay       = 2,
+                })
+            end
             local function registerFeature(featureName, featureFrame, featureKind)
                 if not featureName or not featureFrame then return end
                 local lib = self._library
@@ -2673,6 +2726,7 @@ function Library:Window(config)
                 local default    = toggleConfig.Default or false
                 local callback   = toggleConfig.Callback
                 local noSave     = toggleConfig.NoSave or false
+                if locked then callback, noSave, default = nil, true, false end
                 local configPath = noSave and nil or ("Toggles." .. title:gsub("%s+", "_"))
                 local toggleObj = { _value = default }
                 local wrappedCallback = function(val)
@@ -2684,6 +2738,7 @@ function Library:Window(config)
                 if frame then frame.LayoutOrder = getNextLayoutOrder() end
                 registerFeature(title, frame, "Toggle")
                 function toggleObj:SetValue(val)
+                    if locked then return end
                     self._value = val
                     if toggleResult and toggleResult.set then
                         toggleResult.set(val)
@@ -2703,10 +2758,13 @@ function Library:Window(config)
                 local callback   = dropdownConfig.Callback
                 local noSave     = dropdownConfig.NoSave or false
                 local isMulti    = dropdownConfig.Multi or false
+                if locked then callback, noSave = nil, true end
                 local configPath = noSave and nil or ((isMulti and "MultiDropdowns." or "Dropdowns.") .. title:gsub("%s+", "_"))
                 local uniqueId   = title:gsub("%s+", "_")
                 if isMulti then
-                    local frame = self._library:CreateMultiDropdown(self._container, title, nil, options, configPath, callback, uniqueId)
+                    -- Default multi dulu tidak diteruskan sama sekali (selalu kosong).
+                    local multiDefault = type(default) == "table" and default or nil
+                    local frame = self._library:CreateMultiDropdown(self._container, title, nil, options, configPath, callback, uniqueId, multiDefault)
                     if frame then frame.LayoutOrder = getNextLayoutOrder() end
                     registerFeature(title, frame, "Dropdown")
 
@@ -2753,13 +2811,18 @@ function Library:Window(config)
                 local placeholder = inputConfig.Placeholder or ""
                 local callback    = inputConfig.Callback
                 local noSave      = inputConfig.NoSave or false
+                if locked then callback, noSave = nil, true end
                 local configPath  = noSave and nil or ("Inputs." .. title:gsub("%s+", "_"))
-                
-                local frame = self._library:CreateInput(self._container, title, configPath, default, callback)
+
+                local frame, controller = self._library:CreateInput(self._container, title, configPath, default, callback)
                 if frame then frame.LayoutOrder = getNextLayoutOrder() end
                 registerFeature(title, frame, "Input")
+                -- SetValue dulu kosong (tidak melakukan apa-apa).
                 return {
-                    SetValue = function(self, val) end
+                    SetValue = function(_, val)
+                        if locked or not controller then return end
+                        controller.set(val)
+                    end
                 }
             end
             
@@ -2769,13 +2832,17 @@ function Library:Window(config)
                 local default     = bindConfig.Default or "None"
                 local callback    = bindConfig.Callback
                 local noSave      = bindConfig.NoSave or false
+                if locked then callback, noSave = nil, true end
                 local configPath  = noSave and nil or ("Binds." .. title:gsub("%s+", "_"))
-                
-                local frame = self._library:CreateBind(self._container, title, configPath, default, callback)
+
+                local frame, controller = self._library:CreateBind(self._container, title, configPath, default, callback)
                 if frame then frame.LayoutOrder = getNextLayoutOrder() end
                 registerFeature(title, frame, "Bind")
                 return {
-                    SetValue = function(self, val) end
+                    SetValue = function(_, val)
+                        if locked or not controller then return end
+                        controller.set(val)
+                    end
                 }
             end
             
@@ -2843,6 +2910,7 @@ function Library:Window(config)
                 buttonConfig = buttonConfig or {}
                 local title    = buttonConfig.Title or "Button"
                 local callback = buttonConfig.Callback or function() end
+                if locked then callback = lockedNotice end
                 local frame = self._library:CreateButton(self._container, title, callback)
                 if frame then frame.LayoutOrder = getNextLayoutOrder() end
                 registerFeature(title, frame, "Button")
@@ -2983,66 +3051,109 @@ function Library:Window(config)
     return WindowObject
 end
 
-Library.FeatureHUDManager = {}
-Library.FeatureHUDManager.Buttons = {}
-Library.FeatureHUDManager.Rows = {}
+-- ============================================================================
+-- FeatureHUDManager: tombol shortcut (mobile) + indikator hotkey (PC)
+--  * Tombol mobile berupa grid sel seragam (UIGridLayout, maks 3 kolom). Dulu lebar tiap
+--    tombol mengikuti teks (padding 32px + teks 20px) sehingga besar dan tidak rata.
+--  * Ukuran mengikuti perangkat dari sisi terpendek layar (pola tombol jump Roblox):
+--    HP <= 500, tablet <= 900, selebihnya layar besar. Teks TextScaled + batas maks,
+--    bisa 2 baris untuk nama panjang.
+--  * ScreenGui memakai area aman (IgnoreGuiInset = false + CoreUISafeInsets), jadi tidak
+--    menimpa top bar Roblox / notch.
+--  * RemoveButton tidak lagi ikut menghapus tombol lain; tombol tersembunyi (TeamHUDManager)
+--    otomatis dilewati grid sehingga tidak ada celah.
+--  * Tahan lalu geser tombol untuk memindahkan HUD; posisi disimpan ke config.
+--  * GUI HUD dari eksekusi sebelumnya dihapus dulu (dulu tombol jadi dobel).
+-- ============================================================================
+local HUD_COLUMNS = 3
+local HUD_DRAG_THRESHOLD = 10
 
-Library.FeatureHUDManager.Gui = new("ScreenGui", {
+if type(_G.LynxHUDConns) == "table" then
+    for _, c in ipairs(_G.LynxHUDConns) do pcall(function() c:Disconnect() end) end
+end
+_G.LynxHUDConns = {}
+local hudConns = _G.LynxHUDConns
+if _G.FeatureHUDConn then
+    pcall(function() _G.FeatureHUDConn:Disconnect() end)
+    _G.FeatureHUDConn = nil
+end
+do
+    local roots = { CoreGui }
+    pcall(function() if gethui then table.insert(roots, gethui()) end end)
+    pcall(function() table.insert(roots, localPlayer:FindFirstChild("PlayerGui")) end)
+    for _, r in ipairs(roots) do
+        if r then
+            for _, c in ipairs(r:GetChildren()) do
+                if c.Name == "FeatureHUDGUI" then pcall(function() c:Destroy() end) end
+            end
+        end
+    end
+end
+
+Library.FeatureHUDManager = {}
+local HUD = Library.FeatureHUDManager
+HUD.Buttons = {}
+HUD.Rows = {} -- kompatibilitas; grid tidak memakai baris lagi
+
+HUD.Gui = new("ScreenGui", {
     Name = "FeatureHUDGUI",
     ResetOnSpawn = false,
-    IgnoreGuiInset = true
+    IgnoreGuiInset = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    DisplayOrder = 50
 })
-
-if gethui then
-    Library.FeatureHUDManager.Gui.Parent = gethui()
-elseif CoreGui:FindFirstChild("RobloxGui") then
-    Library.FeatureHUDManager.Gui.Parent = CoreGui
-else
-    Library.FeatureHUDManager.Gui.Parent = localPlayer:WaitForChild("PlayerGui")
+pcall(function() HUD.Gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets end)
+if not pcall(function() HUD.Gui.Parent = gethui() end) or not HUD.Gui.Parent then
+    if not pcall(function() HUD.Gui.Parent = CoreGui end) or not HUD.Gui.Parent then
+        HUD.Gui.Parent = localPlayer:WaitForChild("PlayerGui")
+    end
 end
 
-local MainContainer = new("Frame", {
-    Parent = Library.FeatureHUDManager.Gui,
-    Name = "MainContainer",
+local HUD_MARGIN = 10
+local HUDRoot = new("Frame", {
+    Parent = HUD.Gui,
+    Name = "HUDRoot",
     BackgroundTransparency = 1,
-    Position = UDim2.new(1, -15, 0, 15),
+    Position = UDim2.new(1, -HUD_MARGIN, 0, HUD_MARGIN),
     AnchorPoint = Vector2.new(1, 0),
     Size = UDim2.new(0, 0, 0, 0),
     AutomaticSize = Enum.AutomaticSize.XY
 })
-
-local PCContainer = new("Frame", {
-    Parent = Library.FeatureHUDManager.Gui,
-    Name = "PCContainer",
-    BackgroundTransparency = 1,
-    Position = UDim2.new(1, -15, 0, 15),
-    AnchorPoint = Vector2.new(1, 0),
-    Size = UDim2.new(0, 0, 0, 0),
-    AutomaticSize = Enum.AutomaticSize.XY
-})
-
-local hudScale = new("UIScale", {Parent = MainContainer})
-local pcScale = new("UIScale", {Parent = PCContainer})
-
-Library.FeatureHUDManager.baseScale = 1
-local function updateHUDScale()
-    if not Library.FeatureHUDManager.Gui or not Library.FeatureHUDManager.Gui.Parent then return end
-    local vSize = workspace.CurrentCamera.ViewportSize
-    Library.FeatureHUDManager.baseScale = math.clamp(vSize.Y / 720, 0.6, 1.8)
-    hudScale.Scale = Library.FeatureHUDManager.baseScale
-    pcScale.Scale = Library.FeatureHUDManager.baseScale
-end
-workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateHUDScale)
-updateHUDScale()
-
 new("UIListLayout", {
-    Parent = MainContainer,
+    Parent = HUDRoot,
     FillDirection = Enum.FillDirection.Vertical,
     HorizontalAlignment = Enum.HorizontalAlignment.Right,
     SortOrder = Enum.SortOrder.LayoutOrder,
-    Padding = UDim.new(0, 10)
+    Padding = UDim.new(0, 6)
 })
 
+local MainContainer = new("Frame", {
+    Parent = HUDRoot,
+    Name = "MainContainer",
+    BackgroundTransparency = 1,
+    Size = UDim2.new(0, 0, 0, 0),
+    AutomaticSize = Enum.AutomaticSize.XY,
+    LayoutOrder = 1
+})
+local hudGrid = new("UIGridLayout", {
+    Parent = MainContainer,
+    FillDirection = Enum.FillDirection.Horizontal,
+    FillDirectionMaxCells = HUD_COLUMNS,
+    StartCorner = Enum.StartCorner.TopRight,
+    HorizontalAlignment = Enum.HorizontalAlignment.Right,
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    CellSize = UDim2.fromOffset(86, 34),
+    CellPadding = UDim2.fromOffset(6, 6)
+})
+
+local PCContainer = new("Frame", {
+    Parent = HUDRoot,
+    Name = "PCContainer",
+    BackgroundTransparency = 1,
+    Size = UDim2.new(0, 0, 0, 0),
+    AutomaticSize = Enum.AutomaticSize.XY,
+    LayoutOrder = 2
+})
 new("UIListLayout", {
     Parent = PCContainer,
     FillDirection = Enum.FillDirection.Vertical,
@@ -3051,183 +3162,270 @@ new("UIListLayout", {
     SortOrder = Enum.SortOrder.LayoutOrder,
     Padding = UDim.new(0, 4)
 })
+local pcScale = new("UIScale", {Parent = PCContainer})
 
-if _G.FeatureHUDConn then 
-    _G.FeatureHUDConn:Disconnect() 
-    _G.FeatureHUDConn = nil 
+-- ---------------------------------------------------------------- ukuran per perangkat
+local function viewport()
+    local cam = workspace.CurrentCamera
+    return cam and cam.ViewportSize or Vector2.new(1280, 720)
 end
-
-function Library.FeatureHUDManager:GetRow()
-    local rowCount = #self.Rows
-    local lastRow = self.Rows[rowCount]
-    if not lastRow or (#lastRow:GetChildren() - 1) >= 3 then
-        lastRow = new("Frame", {
-            Parent = MainContainer,
-            Name = "Row" .. (rowCount + 1),
-            BackgroundTransparency = 1,
-            Size = UDim2.new(0, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.XY,
-            LayoutOrder = rowCount + 1
-        })
-        new("UIListLayout", {
-            Parent = lastRow,
-            FillDirection = Enum.FillDirection.Horizontal,
-            HorizontalAlignment = Enum.HorizontalAlignment.Right,
-            VerticalAlignment = Enum.VerticalAlignment.Center,
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 10)
-        })
-        table.insert(self.Rows, lastRow)
+HUD.baseScale = 1
+HUD.metrics = { cellW = 86, cellH = 34, text = 13, corner = 8 }
+local mobileLabels = {}
+local function applyMetrics()
+    local vp = viewport()
+    local minAxis = math.min(vp.X, vp.Y)
+    local m
+    if minAxis <= 500 then        -- HP
+        m = { cellW = 84, cellH = 34, text = 13, corner = 8, pad = 6 }
+    elseif minAxis <= 900 then    -- tablet
+        m = { cellW = 100, cellH = 40, text = 15, corner = 9, pad = 7 }
+    else                          -- layar besar (mode mobile di PC)
+        m = { cellW = 110, cellH = 42, text = 15, corner = 10, pad = 8 }
     end
-    return lastRow
+    HUD.metrics = m
+    hudGrid.CellSize = UDim2.fromOffset(m.cellW, m.cellH)
+    hudGrid.CellPadding = UDim2.fromOffset(m.pad, m.pad)
+    for lbl, parts in pairs(mobileLabels) do
+        if lbl.Parent then
+            parts.constraint.MaxTextSize = m.text
+            parts.corner.CornerRadius = UDim.new(0, m.corner)
+        else
+            mobileLabels[lbl] = nil
+        end
+    end
+    HUD.baseScale = math.clamp(vp.Y / 720, 0.6, 1.8)
+    pcScale.Scale = HUD.baseScale
+end
+local camConn = nil
+local function bindCamera()
+    if camConn then pcall(function() camConn:Disconnect() end) end
+    local cam = workspace.CurrentCamera
+    if cam then
+        camConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(applyMetrics)
+        table.insert(hudConns, camConn)
+    end
+    applyMetrics()
+end
+table.insert(hudConns, workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera))
+bindCamera()
+
+-- ---------------------------------------------------------------- posisi & drag
+local function guiArea()
+    local s = HUD.Gui.AbsoluteSize
+    if s.X <= 0 or s.Y <= 0 then return viewport() end
+    return s
+end
+local function setRootOffset(ox, oy)
+    local area = guiArea()
+    local size = HUDRoot.AbsoluteSize
+    ox = math.clamp(ox, math.min(0, size.X - area.X), 0)
+    oy = math.clamp(oy, 0, math.max(0, area.Y - size.Y))
+    HUDRoot.Position = UDim2.new(1, ox, 0, oy)
+end
+local posLoaded = false
+local function loadRootPos()
+    if posLoaded then return end
+    posLoaded = true
+    local x = Library.ConfigSystem.Get("HUD.PosX", nil)
+    local y = Library.ConfigSystem.Get("HUD.PosY", nil)
+    if type(x) == "number" and type(y) == "number" then
+        task.defer(setRootOffset, x, y)
+    end
+end
+local function saveRootPos()
+    Library.ConfigSystem.Set("HUD.PosX", HUDRoot.Position.X.Offset)
+    Library.ConfigSystem.Set("HUD.PosY", HUDRoot.Position.Y.Offset)
+    MarkDirty()
 end
 
-function Library.FeatureHUDManager:AddButton(text, clickCallback, hotkeyString)
+local press = nil
+local function setPressed(ref, pressed)
+    if not (ref and ref.pressScale and ref.pressScale.Parent) then return end
+    TweenService:Create(ref.pressScale, TweenInfo.new(0.08), {Scale = pressed and 0.93 or 1}):Play()
+    if ref.paint then ref:paint(pressed) end
+end
+table.insert(hudConns, UserInputService.InputChanged:Connect(function(input)
+    local p = press
+    if not p then return end
+    if p.isTouch then
+        if input ~= p.input then return end
+    elseif input.UserInputType ~= Enum.UserInputType.MouseMovement then
+        return
+    end
+    local delta = input.Position - p.startPos
+    if not p.moved and delta.Magnitude > HUD_DRAG_THRESHOLD then
+        p.moved = true
+        setPressed(p.ref, false)
+    end
+    if p.moved then
+        setRootOffset(p.rootStart.X.Offset + delta.X, p.rootStart.Y.Offset + delta.Y)
+    end
+end))
+table.insert(hudConns, UserInputService.InputEnded:Connect(function(input)
+    local p = press
+    if not p then return end
+    if p.isTouch then
+        if input ~= p.input then return end
+    elseif input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+        return
+    end
+    press = nil
+    setPressed(p.ref, false)
+    if p.moved then
+        saveRootPos()
+    elseif p.ref.callback and p.ref.container and p.ref.container.Parent then
+        task.spawn(p.ref.callback)
+    end
+end))
+
+-- ---------------------------------------------------------------- daftar tombol
+local orderCounter = 0
+function HUD:Relayout()
+    local alive = {}
+    for _, b in ipairs(self.Buttons) do
+        local c = type(b) == "table" and b.container
+        local ok, parent = pcall(function() return c and c.Parent end)
+        if ok and parent then alive[#alive + 1] = b end
+    end
+    self.Buttons = alive
+end
+-- Kompatibilitas: dulu mengembalikan baris yang masih punya slot.
+function HUD:GetRow()
+    return MainContainer
+end
+
+local COLOR_TILE      = Color3.fromRGB(12, 12, 14)
+local COLOR_TILE_ON   = Color3.fromRGB(60, 32, 6)
+local COLOR_STROKE    = Color3.fromRGB(255, 255, 255)
+local COLOR_STROKE_ON = colors.primary
+
+function HUD:AddButton(text, clickCallback, hotkeyString)
     if not isMobile then
         return self:AddPCIndicator(text, hotkeyString)
     end
-    
-    local row = self:GetRow()
-    
+    loadRootPos()
+    orderCounter = orderCounter + 1
+    local m = HUD.metrics
     local container = new("Frame", {
-        Parent = row,
-        Name = "HUDButton_" .. text,
-        Size = UDim2.new(0, 0, 0, 56),
-        AutomaticSize = Enum.AutomaticSize.X,
-        BackgroundColor3 = Color3.fromRGB(20, 10, 0),
-        BackgroundTransparency = 0.6,
+        Parent = MainContainer,
+        Name = "HUDButton_" .. tostring(text),
+        BackgroundColor3 = COLOR_TILE,
+        BackgroundTransparency = 0.4,
         BorderSizePixel = 0,
-        LayoutOrder = #self.Buttons
+        LayoutOrder = orderCounter,
     })
-    local overlay = new("Frame", {
-        Parent = container,
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ZIndex = 5
-    })
-    new("UICorner", {Parent = overlay, CornerRadius = UDim.new(0, 6)})
-    
-    new("UICorner", {Parent = container, CornerRadius = UDim.new(0, 6)})
-    
+    local corner = new("UICorner", {Parent = container, CornerRadius = UDim.new(0, m.corner)})
     local stroke = new("UIStroke", {
         Parent = container,
-        Color = Color3.fromRGB(255, 120, 0),
-        Thickness = 1
+        Color = COLOR_STROKE,
+        Transparency = 0.75,
+        Thickness = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     })
-    
-    new("UIGradient", {
-        Parent = stroke,
-        Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 170, 0)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 80, 0)),
-        }
-    })
-    
-    new("UIGradient", {
-        Parent = container,
-        Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 20, 0)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 5, 0)),
-        }
-    })
-
-    new("UIPadding", {
-        Parent = container,
-        PaddingLeft = UDim.new(0, 32),
-        PaddingRight = UDim.new(0, 32)
-    })
-    
+    local pressScale = new("UIScale", {Parent = container})
     local label = new("TextLabel", {
         Parent = container,
         Name = "Label",
-        Size = UDim2.new(0, 0, 1, 0),
-        AutomaticSize = Enum.AutomaticSize.X,
+        Size = UDim2.new(1, -10, 1, -6),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
-        TextSize = 20,
+        TextScaled = true,
+        TextWrapped = true,
         TextColor3 = Color3.fromRGB(255, 255, 255),
-        RichText = true,
-        Text = "<b>" .. text .. "</b>"
+        Text = tostring(text),
     })
-    
+    local constraint = new("UITextSizeConstraint", {Parent = label, MaxTextSize = m.text, MinTextSize = 8})
+    mobileLabels[label] = { constraint = constraint, corner = corner }
     local btn = new("TextButton", {
         Parent = container,
         Name = "ClickArea",
         Size = UDim2.fromScale(1, 1),
-        Position = UDim2.new(0, 0, 0, 0),
         BackgroundTransparency = 1,
         Text = "",
+        AutoButtonColor = false,
         ZIndex = 10
     })
-    
-    local dragging = false
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            TweenService:Create(overlay, TweenInfo.new(0.1), {BackgroundTransparency = 0.5}):Play()
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                    TweenService:Create(overlay, TweenInfo.new(0.1), {BackgroundTransparency = 1}):Play()
-                end
-            end)
-        end
-    end)
-    
-    if clickCallback then
-        btn.MouseButton1Click:Connect(clickCallback)
-    end
-    
     local ref = {
         isPC = false,
         container = container,
-        UpdateHotkey = function(self, newHotkey) end,
-        UpdateText = function(self, newText)
-            if label then label.Text = "<b>" .. tostring(newText) .. "</b>" end
-        end
+        pressScale = pressScale,
+        callback = clickCallback,
+        text = tostring(text),
+        active = false,
+        _conns = {},
     }
+    function ref:paint(pressed)
+        if not container.Parent then return end
+        local on = self.active
+        container.BackgroundColor3 = on and COLOR_TILE_ON or COLOR_TILE
+        container.BackgroundTransparency = pressed and 0.15 or (on and 0.25 or 0.4)
+        stroke.Color = on and COLOR_STROKE_ON or COLOR_STROKE
+        stroke.Transparency = on and 0.1 or 0.75
+        stroke.Thickness = on and 1.5 or 1
+    end
+    function ref:UpdateHotkey(newHotkey) end
+    function ref:UpdateText(newText)
+        self.text = tostring(newText)
+        if label.Parent then label.Text = self.text end
+    end
+    -- Opsional: tandai shortcut sedang aktif (latar oranye gelap + garis tepi oranye).
+    function ref:SetActive(state)
+        self.active = state == true
+        self:paint(false)
+    end
+    table.insert(ref._conns, btn.InputBegan:Connect(function(input)
+        local t = input.UserInputType
+        if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
+        if press then return end
+        press = {
+            ref = ref,
+            input = input,
+            isTouch = t == Enum.UserInputType.Touch,
+            startPos = input.Position,
+            rootStart = HUDRoot.Position,
+            moved = false,
+        }
+        setPressed(ref, true)
+    end))
     table.insert(self.Buttons, ref)
     return ref
 end
 
-function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
+function HUD:AddPCIndicator(text, hotkeyString)
+    loadRootPos()
+    orderCounter = orderCounter + 1
     local container = new("Frame", {
         Parent = PCContainer,
-        Name = "PCIndicator_" .. text,
+        Name = "PCIndicator_" .. tostring(text),
         Size = UDim2.new(0, 0, 0, 24),
         AutomaticSize = Enum.AutomaticSize.X,
         BackgroundColor3 = colors.bg1,
         BorderSizePixel = 0,
-        LayoutOrder = #self.Buttons
+        LayoutOrder = orderCounter
     })
-    
     new("UIGradient", {
         Parent = container,
         Transparency = NumberSequence.new({
             NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.3, 0.5), 
+            NumberSequenceKeypoint.new(0.3, 0.5),
             NumberSequenceKeypoint.new(1, 0.2)
         })
     })
-
     new("UIListLayout", {
         Parent = container,
         FillDirection = Enum.FillDirection.Horizontal,
         VerticalAlignment = Enum.VerticalAlignment.Center,
         SortOrder = Enum.SortOrder.LayoutOrder
     })
-
     new("Frame", {
         Parent = container,
         Size = UDim2.new(0, 40, 1, 0),
         BackgroundTransparency = 1,
         LayoutOrder = 1
     })
-
     local label = new("TextLabel", {
         Parent = container,
         Size = UDim2.new(0, 0, 1, 0),
@@ -3239,14 +3437,12 @@ function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
         RichText = true,
         LayoutOrder = 2
     })
-    
     new("Frame", {
         Parent = container,
         Size = UDim2.new(0, 12, 1, 0),
         BackgroundTransparency = 1,
         LayoutOrder = 3
     })
-
     new("Frame", {
         Parent = container,
         Size = UDim2.new(0, 3, 1, 0),
@@ -3254,87 +3450,52 @@ function Library.FeatureHUDManager:AddPCIndicator(text, hotkeyString)
         BorderSizePixel = 0,
         LayoutOrder = 4
     })
-
     local ref = {
         isPC = true,
         container = container,
-        text = text,
+        text = tostring(text),
         label = label,
-        hotkey = hotkeyString or "None"
+        hotkey = hotkeyString or "None",
+        _conns = {},
     }
-    
+    local hexColor = string.format("%02X%02X%02X",
+        math.floor(colors.primary.R * 255),
+        math.floor(colors.primary.G * 255),
+        math.floor(colors.primary.B * 255))
     function ref:UpdateHotkey(newHotkey)
-        local hexColor = string.format("%02X%02X%02X", 
-            math.floor(colors.primary.R*255), 
-            math.floor(colors.primary.G*255), 
-            math.floor(colors.primary.B*255))
-        
         self.hotkey = (newHotkey and tostring(newHotkey) ~= "") and tostring(newHotkey) or "None"
-        self.label.Text = string.format("<font color='#%s'>[%s]</font>  %s", hexColor, self.hotkey, self.text)
+        if self.label and self.label.Parent then
+            self.label.Text = string.format("<font color='#%s'>[%s]</font>  %s", hexColor, self.hotkey, self.text)
+        end
     end
-    
     function ref:UpdateText(newText)
         self.text = tostring(newText)
         self:UpdateHotkey(self.hotkey)
     end
-    
+    function ref:SetActive(state) end
     ref:UpdateHotkey(hotkeyString)
-
     table.insert(self.Buttons, ref)
     return ref
 end
 
-function Library.FeatureHUDManager:RemoveButton(ref)
+function HUD:RemoveButton(ref)
     if not ref then return end
-    
     local container = type(ref) == "table" and ref.container or ref
-
     for i, b in ipairs(self.Buttons) do
         local bContainer = type(b) == "table" and b.container or b
-        if bContainer == container or b == ref then
+        if b == ref or bContainer == container then
             table.remove(self.Buttons, i)
+            if type(b) == "table" and b._conns then
+                for _, c in ipairs(b._conns) do pcall(function() c:Disconnect() end) end
+            end
             break
         end
     end
-    
-    if container and container.Parent then
-        container:Destroy()
+    if press and press.ref == ref then press = nil end
+    if container then
+        pcall(function() container:Destroy() end)
     end
-    
-    if not isMobile then return end
-    
-    local tempBtns = {}
-    for _, b in ipairs(self.Buttons) do
-        local bContainer = type(b) == "table" and b.container or b
-        if bContainer then
-            local isAlive = false
-            pcall(function()
-                if bContainer.Parent ~= nil then
-                    isAlive = true
-                end
-            end)
-            if isAlive then
-                table.insert(tempBtns, b)
-            end
-        end
-    end
-    
-    self.Buttons = {}
-    for _, r in ipairs(self.Rows) do
-        pcall(function() r:Destroy() end)
-    end
-    self.Rows = {}
-    
-    for _, b in ipairs(tempBtns) do
-        local bContainer = type(b) == "table" and b.container or b
-        local r = self:GetRow()
-        local s, _ = pcall(function()
-            bContainer.Parent = r
-        end)
-        if s then
-            table.insert(self.Buttons, b)
-        end
-    end
+    self:Relayout()
 end
 
 return Library
