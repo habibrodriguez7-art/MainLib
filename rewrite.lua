@@ -72,8 +72,6 @@ end
 local function cancelThread(thread)
     if thread then pcall(task.cancel, thread) end
 end
--- Build budget per frame follows the device's frame time: on 60fps+ it stays ~8ms
--- (smooth), on low-end (15-20fps) it grows up to 45ms so the build needs far fewer frames.
 local BUILD_BUDGET_MIN, BUILD_BUDGET_MAX = 0.008, 0.045
 local buildBudget = BUILD_BUDGET_MIN
 local buildWork, buildLast = 0, 0
@@ -260,13 +258,17 @@ local function pruneLegacyKeys()
     end
     Config.Save()
 end
-function Config.Get(path, default)
-    if not path then return default end
-    local value = CurrentConfig
+local function readPath(root, path)
+    local value = root
     for key in path:gmatch("[^.]+") do
-        if type(value) ~= "table" then return default end
+        if type(value) ~= "table" then return nil end
         value = value[key]
     end
+    return value
+end
+function Config.Get(path, default)
+    if not path then return default end
+    local value = readPath(CurrentConfig, path)
     if value == nil then return default end
     return value
 end
@@ -355,6 +357,46 @@ local function executeConfigCallbacks()
             end
         end
     end
+end
+function Config.ImportJson(raw)
+    raw = type(raw) == "string" and raw:match("^%s*(.-)%s*$") or ""
+    if raw == "" then return false, "Kotak JSON masih kosong." end
+    local ok, data = pcall(HttpService.JSONDecode, HttpService, raw)
+    if not ok or type(data) ~= "table" then return false, "JSON tidak valid, cek lagi formatnya." end
+    if isList(data) then return false, "JSON harus berupa object config { ... }." end
+    local matched = 0
+    for path in pairs(CallbackRegistry) do
+        if readPath(data, path) ~= nil then matched = matched + 1 end
+    end
+    if matched == 0 then return false, "Tidak ada setting yang cocok dengan script ini." end
+    local before = {}
+    for path, entry in pairs(CallbackRegistry) do before[path] = deepCopy(Config.Get(path, entry.default)) end
+    CurrentConfig = deepCopy(DefaultConfig)
+    mergeTables(CurrentConfig, data)
+    isDirty = false
+    cancelThread(saveThread)
+    saveThread = nil
+    Config.Save()
+    local changed = 0
+    for path, entry in pairs(CallbackRegistry) do
+        local value = Config.Get(path, entry.default)
+        if entry.updateVisual then safeCall("updateVisual @" .. path, entry.updateVisual, value) end
+        if not sameValue(before[path], value) then
+            changed = changed + 1
+            fireCallback("callback @" .. path, entry.callback, value)
+        end
+    end
+    return true, matched, changed
+end
+function Config.ExportJson()
+    if next(CurrentConfig) == nil then return "{}" end
+    local ok, json = pcall(HttpService.JSONEncode, HttpService, CurrentConfig)
+    return ok and json or nil
+end
+local function copyToClipboard(text)
+    local clip = setclipboard or toclipboard or writeclipboard
+        or (Clipboard and Clipboard.set) or (clipboard and clipboard.set)
+    return clip ~= nil and pcall(clip, text)
 end
 _G.AutoSaveEnabled = true
 function _G.GetConfigValue(key, default) return Config.Get(key, default) end
@@ -527,9 +569,7 @@ function Library:CreateWindow(config)
         TextTruncate = Enum.TextTruncate.AtEnd, Size = u2(0, discordTextW + 2, 1, 0), Position = u2(0, 33, 0, 0),
     })
     discordBtn.MouseButton1Click:Connect(function()
-        local clip = setclipboard or toclipboard or writeclipboard
-            or (Clipboard and Clipboard.set) or (clipboard and clipboard.set)
-        if clip and pcall(clip, discordLink) then
+        if copyToClipboard(discordLink) then
             self:MakeNotify({ Title = "Discord", Description = "Invite link disalin ke clipboard!" })
         else
             self:MakeNotify({ Title = "Discord", Description = discordLink, Delay = 6 })
@@ -749,7 +789,6 @@ function Library:_createSearchBar()
         if query ~= "" then
             local later = {}
             for _, entry in ipairs(self._searchIndex) do
-                -- entry.frame is nil while the element is not built yet (lazy section)
                 if not entry.frame or entry.frame.Parent then
                     local at = entry.lname:find(query, 1, true)
                     if at == 1 then
@@ -841,7 +880,6 @@ function Library:_switchPage(name)
     local current = self.pages[name].frame
     current.Size = PAGE_SIZE
     current.Visible = true
-    -- build open sections of this page that were deferred while it was hidden
     for _, onShown in ipairs(self.pages[name].sections) do safeCall("section build", onShown) end
     for pageName, nav in pairs(self._navButtons) do
         local active = pageName == name
@@ -895,8 +933,6 @@ function Library:CreateCategory(parent, title, startOpen, onOpen)
         if not isOpen then setOpen(true) end
     end
 end
--- Components are split in two: the state/config/callback part is created right away,
--- the Instances are only created by build(parent, order) when the element becomes visible.
 function Library:_makeToggle(label, configPath, callback, disableSave, defaultValue)
     local path = not disableSave and configPath or nil
     local flagKey = configPath or label
@@ -1438,7 +1474,6 @@ function Library:_makeParagraph(config)
         text = formatRichText(text)
         if latest[key] == text then return end
         latest[key] = text
-        -- not built yet: build() will paint the latest text
         if frame then self:_queueParagraph(flush) end
     end
     local api = {
@@ -1732,6 +1767,42 @@ function Library:_createConfigTab(window)
         Config.Delete()
         self:MakeNotify({ Title = "Config", Description = "File config telah dihapus.", Color = colors.danger, Delay = 2 })
     end)
+    local external = tab:AddSection("Load From External")
+    local jsonBox = external:AddInput({
+        Title = "External Config JSON",
+        Placeholder = "Paste JSON config here",
+        NoSave = true,
+    })
+    external:AddButton({
+        Title = "Load External JSON",
+        Callback = function()
+            local ok, matched, changed = Config.ImportJson(jsonBox:GetValue())
+            if ok then
+                self:MakeNotify({
+                    Title = "Config",
+                    Description = ("Config berhasil dimuat! %d setting cocok, %d berubah."):format(matched, changed),
+                    Color = colors.success, Delay = 3,
+                })
+            else
+                self:MakeNotify({ Title = "Config", Description = matched, Color = colors.danger, Delay = 3 })
+            end
+        end,
+    })
+    external:AddButton({
+        Title = "Export Config",
+        Callback = function()
+            local json = Config.ExportJson()
+            if not json then
+                return self:MakeNotify({ Title = "Config", Description = "Gagal export config.", Color = colors.danger, Delay = 2 })
+            end
+            jsonBox:SetValue(json)
+            if copyToClipboard(json) then
+                self:MakeNotify({ Title = "Config", Description = "Config disalin ke clipboard!", Color = colors.success, Delay = 2 })
+            else
+                self:MakeNotify({ Title = "Config", Description = "Clipboard tidak tersedia, salin manual dari kotak JSON.", Delay = 4 })
+            end
+        end,
+    })
 end
 local ICONS = {
     player    = "rbxassetid://12120698352",
@@ -1779,7 +1850,6 @@ local function configPath(prefix, title)
     end
     return path
 end
--- Accessing an instance field (_frame, ...) of a not-yet-built element builds it on demand.
 local LAZY_FIELDS = { _frame = true, _titleLabel = true, _contentLabel = true }
 local function lazyHandle(handle, ensure)
     return setmetatable(handle, {
@@ -1791,8 +1861,6 @@ local function lazyHandle(handle, ensure)
         end,
     })
 end
--- Lazy build: a section's elements only get Instances once the section is open AND its
--- tab is the current page. Until then only state/config/callbacks exist (cheap Lua).
 local function createSection(lib, page, tabName, sectionTitle, isOpen)
     local Section = { _library = lib, _layoutOrder = 0 }
     local queue, materialized, opened = {}, false, false
@@ -1812,7 +1880,6 @@ local function createSection(lib, page, tabName, sectionTitle, isOpen)
     Section._container = container
     local pageInfo = lib.pages[tabName]
     if pageInfo then table.insert(pageInfo.sections, tryMaterialize) end
-    -- build(parent, order) -> frame. eagerFrame: frame that must exist right away (buttons).
     local function add(name, build, onBuilt, eagerFrame)
         Section._layoutOrder = Section._layoutOrder + 1
         local order = Section._layoutOrder
@@ -1891,7 +1958,6 @@ local function createSection(lib, page, tabName, sectionTitle, isOpen)
     function Section:AddButton(cfg)
         cfg = cfg or {}
         local title = cfg.Title or "Button"
-        -- the outer frame is returned to the caller, so it exists right away; the button inside is lazy
         local frame = new("Frame", { ZIndex = 8, Size = u2(1, 0, 0, 28), BackgroundTransparency = 1 })
         add(title, function()
             lib:_fillButton(frame, title, cfg.Callback)
