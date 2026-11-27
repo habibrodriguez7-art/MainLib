@@ -26,7 +26,7 @@ local SIDEBAR_W, HEADER_H, TOPBAR_H, SECTION_H = 120, 34, 28, 30
 local PANEL_T, SECTION_T = 0.1, 0.3
 local FONT = { title = 15, header = 12, normal = 11, small = 10 }
 local BOLD, MEDIUM, REGULAR = Enum.Font.GothamBold, Enum.Font.GothamMedium, Enum.Font.Gotham
-local LOCK_ICON_SMALL, LOCK_ICON_BIG = "rbxassetid://91807786360605", "rbxassetid://108550173627950"
+local LOCK_ICON_SMALL, LOCK_ICON_BIG, LOCK_MIN_H = "rbxassetid://91807786360605", "rbxassetid://108550173627950", 64
 local LEFT = Enum.TextXAlignment.Left
 local TEXT_DEFAULTS = { BorderSizePixel = 0, BackgroundTransparency = 1, Font = BOLD, TextSize = FONT.small, TextColor3 = colors.text }
 local DEFAULTS = {
@@ -920,7 +920,7 @@ function Library:CreateCategory(parent, title, startOpen, onOpen, locked)
     local layout = new("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder })
     local body = locked and new("Frame", {
         Parent = frame, ZIndex = 7, LayoutOrder = 2, BackgroundTransparency = 1,
-        Size = u2(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        Size = u2(1, 0, 0, LOCK_MIN_H), AutomaticSize = Enum.AutomaticSize.Y,
     })
     local content = new("Frame", {
         Parent = body or frame, ZIndex = 7, LayoutOrder = 2, BackgroundTransparency = 1,
@@ -956,7 +956,8 @@ function Library:CreateCategory(parent, title, startOpen, onOpen, locked)
     end
     local isOpen = startOpen == true
     local function updateHeight()
-        local h = isOpen and (SECTION_H + layout.AbsoluteContentSize.Y + 6) or SECTION_H
+        local inner = layout.AbsoluteContentSize.Y + 6
+        local h = isOpen and (SECTION_H + (body and math.max(inner, LOCK_MIN_H) or inner)) or SECTION_H
         frame.Size = u2(1, 0, 0, h)
     end
     local function setOpen(state)
