@@ -358,6 +358,27 @@ local function executeConfigCallbacks()
         end
     end
 end
+local function snapshotConfig()
+    local before = {}
+    for path, entry in pairs(CallbackRegistry) do before[path] = deepCopy(Config.Get(path, entry.default)) end
+    return before
+end
+local function applyChangedConfig(before)
+    local changed = {}
+    for path, entry in pairs(CallbackRegistry) do
+        local value = Config.Get(path, entry.default)
+        if entry.updateVisual then safeCall("updateVisual @" .. path, entry.updateVisual, value) end
+        if not sameValue(before[path], value) then changed[#changed + 1] = { entry = entry, value = value } end
+    end
+    local function rank(item)
+        return item.entry.kind ~= "toggle" and 0 or item.value == true and 2 or 1
+    end
+    table.sort(changed, function(a, b) return rank(a) < rank(b) end)
+    for _, item in ipairs(changed) do
+        if item.entry.callback then fireCallback("callback @" .. item.entry.path, item.entry.callback, item.value) end
+    end
+    return #changed
+end
 function Config.ImportJson(raw)
     raw = type(raw) == "string" and raw:match("^%s*(.-)%s*$") or ""
     if raw == "" then return false, "Kotak JSON masih kosong." end
@@ -369,24 +390,14 @@ function Config.ImportJson(raw)
         if readPath(data, path) ~= nil then matched = matched + 1 end
     end
     if matched == 0 then return false, "Tidak ada setting yang cocok dengan script ini." end
-    local before = {}
-    for path, entry in pairs(CallbackRegistry) do before[path] = deepCopy(Config.Get(path, entry.default)) end
+    local before = snapshotConfig()
     CurrentConfig = deepCopy(DefaultConfig)
     mergeTables(CurrentConfig, data)
     isDirty = false
     cancelThread(saveThread)
     saveThread = nil
     Config.Save()
-    local changed = 0
-    for path, entry in pairs(CallbackRegistry) do
-        local value = Config.Get(path, entry.default)
-        if entry.updateVisual then safeCall("updateVisual @" .. path, entry.updateVisual, value) end
-        if not sameValue(before[path], value) then
-            changed = changed + 1
-            fireCallback("callback @" .. path, entry.callback, value)
-        end
-    end
-    return true, matched, changed
+    return true, matched, applyChangedConfig(before)
 end
 function Config.ExportJson()
     if next(CurrentConfig) == nil then return "{}" end
@@ -1752,8 +1763,9 @@ function Library:_createConfigTab(window)
         end,
     })
     addConfirmButton(section, "Reset to Default", rgb(255, 100, 0), function()
+        local before = snapshotConfig()
         Config.Reset()
-        executeConfigCallbacks()
+        applyChangedConfig(before)
         self:MakeNotify({ Title = "Config", Description = "Semua settingan direset ke default!", Color = colors.danger })
     end)
     section:AddParagraph({
